@@ -51,3 +51,31 @@ def test_cached_matches_naive_varied_shapes():
             cached = m.cached_forward(data, c1, c2, c3)
         assert torch.allclose(naive, cached, atol=1e-5), \
             (seed, (naive - cached).abs().max().item())
+
+
+def test_cached_matches_naive_with_zero_layer_stacks():
+    for layers in [(0, 0, 0, 0, 0, 0, 0), (0, 1, 0, 1, 0, 1, 0)]:
+        m, tok = make_model(seed=9, layers=layers)
+        data, c1, c2, c3 = _seq(tok, 24, seed=13)
+        with torch.no_grad():
+            naive = m(data, c1, c2, c3)
+            cached = m.cached_forward(data, c1, c2, c3)
+        assert torch.allclose(naive, cached, atol=1e-5), \
+            (layers, (naive - cached).abs().max().item())
+
+
+def test_cached_matches_naive_for_explicit_boundary_patterns():
+    m, tok = make_model(seed=11, layers=(2, 1, 2, 1, 2, 1, 2))
+    patterns = [
+        ["SOS", "x1", "x2", "EOS"],
+        ["SOS", "b1", "b1", "b1", "EOS"],
+        ["SOS", "x1", "b2", "x2", "b3", "EOS"],
+        ["SOS", "b3", "b2", "b1", "x1", "EOS"],
+    ]
+    with torch.no_grad():
+        for symbols in patterns:
+            data = torch.tensor(tok.encode(symbols)).view(-1, 1)
+            closes = tok.group_sequence(data, sequence_dim=0)
+            naive = m(data, *closes)
+            cached = m.cached_forward(data, *closes)
+            assert torch.allclose(naive, cached, atol=1e-5), symbols

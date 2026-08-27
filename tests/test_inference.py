@@ -42,3 +42,24 @@ def test_cached_decode_shapes():
                                               stop_on_eos=False)
     assert tokens.dim() == 1 and tokens.numel() == 2 + 16
     assert b1.shape == tokens.shape
+
+
+def test_decode_equivalence_with_context_dependent_grouping():
+    base = Tokenizer()
+    x7 = base.sym2idx["x7"]
+
+    def rule(token_id, default, state):
+        if token_id == base.b1_id and state["previous_token_id"] != x7:
+            return 0, 0, 0
+        return default
+
+    torch.manual_seed(12)
+    tok = Tokenizer(group_rule=rule)
+    model = HourglassLM(
+        n_token=len(tok), n_head=2, d_model=16, d_head=8, d_inner=32,
+        dropout=0.0, dropatt=0.0, layers=(1, 1, 1, 1, 1, 1, 1),
+    ).eval()
+    prompt = torch.tensor(tok.encode(["SOS", "x7", "b1", "b1", "x2"]))
+    same, max_diff = decode_equivalence(model, tok, prompt, max_new_tokens=16)
+    assert same
+    assert max_diff < 1e-5

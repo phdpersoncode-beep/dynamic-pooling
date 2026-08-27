@@ -29,9 +29,11 @@ group(token) -> (close_1, close_2, close_3)
 
 The default is a lookup table where each boundary token is a real boundary, with
 cumulative semantics: a level-2 event closes levels 1 and 2, a level-3 event
-closes levels 1, 2 and 3 (so `c3 <= c2 <= c1`). `group()` is the single source
-of truth used during data generation, training, naive inference and cached
-inference. `SOS`/`EOS` never close a group.
+closes levels 1, 2 and 3 (so `c3 <= c2 <= c1`). An optional causal
+`group_rule(token, default_events, state)` can suppress these events or create
+events for other tokens using preceding-token state. `group()` is the single
+source of truth used during data generation, training, naive inference and
+cached inference. `SOS`/`EOS` never close a group under the default rule.
 
 ## 3. Data generation
 
@@ -165,9 +167,7 @@ size.
 ## 9. Notes and limitations
 
 - The cached path is batch size 1, as planned; batched asynchronous grouping is
-  future work. The naive decoder accepts batches, but ragged per-sequence
-  boundary counts make the shared padded pooling dimension only approximate for
-  `B > 1` — exact per-sequence results use `B = 1`.
+  future work.
 - The generated sequences are random by construction, so next-token loss floors
   at the data entropy rather than zero (see Training).
 - The environment is CPU-only; FlashAttention-2 and GPU training are out of

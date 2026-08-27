@@ -541,6 +541,8 @@ class HourglassLM(nn.Module):
 
     # ---- incremental KV-cached path (batch size 1) ---------------------
     def _stack_step(self, layers, x_new, caches):
+        if not layers:
+            return x_new, caches
         L = 1 if caches[0] is None else caches[0][0].size(0) + 1
         pos_seq = torch.arange(L - 1, -1, -1.0,
                                device=x_new.device, dtype=x_new.dtype)

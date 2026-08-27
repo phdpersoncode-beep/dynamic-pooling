@@ -24,6 +24,9 @@ from tokenizer import Tokenizer, DEFAULT_DEF_PATH
 
 def generate(n_seq, seq_len, p1, p2, p3, seed, tokenizer=None):
     """Return tokens (N x S long) and boundaries_1/2/3 (N x S long)."""
+    assert n_seq > 0, "n_seq must be positive"
+    assert all(0.0 <= p <= 1.0 for p in (p1, p2, p3)), \
+        "boundary probabilities must be between 0 and 1"
     assert p1 + p2 + p3 <= 1.0, "boundary probabilities must sum to <= 1"
     assert seq_len >= 3, "need room for SOS, one body token, EOS"
     tok = tokenizer or Tokenizer()

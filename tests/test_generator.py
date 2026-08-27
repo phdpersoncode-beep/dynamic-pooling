@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from generator import generate
@@ -37,3 +38,9 @@ def test_cumulative_property():
     tok = Tokenizer()
     _, b1, b2, b3 = generate(100, 48, 0.2, 0.08, 0.03, seed=3, tokenizer=tok)
     assert torch.all(b3 <= b2) and torch.all(b2 <= b1)
+
+
+@pytest.mark.parametrize("probabilities", [(-0.1, 0.1, 0.0), (0.8, 0.3, 0.0)])
+def test_invalid_probabilities_are_rejected(probabilities):
+    with pytest.raises(AssertionError):
+        generate(1, 8, *probabilities, seed=0)

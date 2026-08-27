@@ -46,6 +46,8 @@ def latest_dataset(root="tokenizer_data"):
 
 def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
           ckpt_path="checkpoints/toy.pt", loss_fig="docs/figures/train_loss.png"):
+    assert accum > 0, "accum must be positive"
+    assert subset is None or subset > 0, "subset must be positive"
     torch.manual_seed(seed)
     tok = Tokenizer()
     ds_dir = latest_dataset()
@@ -71,6 +73,8 @@ def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
         running, count = 0.0, 0
         t0 = time.time()
         for j, idx in enumerate(order.tolist()):
+            window_start = (j // accum) * accum
+            window_size = min(accum, n - window_start)
             data = data_all[:-1, idx:idx + 1]
             target = data_all[1:, idx:idx + 1]
             c1 = c1_all[:-1, idx:idx + 1]
@@ -78,16 +82,13 @@ def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
             c3 = c3_all[:-1, idx:idx + 1]
             _, loss = model(data, c1, c2, c3, target=target)
             loss = loss.mean()
-            (loss / accum).backward()
+            (loss / window_size).backward()
             running += loss.item()
             count += 1
-            if (j + 1) % accum == 0:
+            if (j + 1) % accum == 0 or j + 1 == n:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
                 opt.step()
                 opt.zero_grad()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
-        opt.step()
-        opt.zero_grad()
         avg = running / count
         losses.append(avg)
         print(f"epoch {epoch:3d}  loss {avg:.4f}  ({time.time()-t0:.1f}s)")

@@ -29,13 +29,13 @@ def greedy_decode_naive(model, tok, prompt, max_new_tokens=64, stop_on_eos=True)
     model.eval()
     tokens = prompt.clone()
     for _ in range(max_new_tokens):
-        c1, c2, c3 = tok.group_sequence(tokens)
+        c1, c2, c3 = tok.group_sequence(tokens, sequence_dim=0)
         logit = model(tokens, c1, c2, c3)          # T x B x V
         nxt = logit[-1].argmax(dim=-1)             # B
         tokens = torch.cat([tokens, nxt[None, :]], dim=0)
         if stop_on_eos and bool((nxt == tok.eos_id).all()):
             break
-    b1, b2, b3 = tok.group_sequence(tokens)
+    b1, b2, b3 = tok.group_sequence(tokens, sequence_dim=0)
     return tokens, b1, b2, b3
 
 
@@ -46,12 +46,16 @@ def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True
     prompt: 1D LongTensor (or list). Returns tokens (T,) and b1/b2/b3 (T,).
     """
     model.eval()
+    output_device = prompt.device if isinstance(prompt, torch.Tensor) else None
     prompt = prompt.tolist() if isinstance(prompt, torch.Tensor) else list(prompt)
+    if not prompt:
+        raise ValueError("prompt must contain at least one token")
     state = model.init_state()
+    group_state = tok.init_group_state()
 
     logit = None
     for t in prompt:                                # consume the prompt
-        c1, c2, c3 = tok.group(t)
+        c1, c2, c3 = tok.group(t, group_state)
         logit = model.step(state, t, c1, c2, c3)
 
     seq = list(prompt)
@@ -60,10 +64,10 @@ def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True
         seq.append(nxt)
         if stop_on_eos and nxt == tok.eos_id:
             break
-        c1, c2, c3 = tok.group(nxt)
+        c1, c2, c3 = tok.group(nxt, group_state)
         logit = model.step(state, nxt, c1, c2, c3)
 
-    tokens = torch.tensor(seq)
+    tokens = torch.tensor(seq, device=output_device)
     b1, b2, b3 = tok.group_sequence(tokens)
     return tokens, b1, b2, b3
 
@@ -94,7 +98,7 @@ def decode_equivalence(model, tok, prompt, max_new_tokens=64):
     same = torch.equal(naive_flat, cached_tokens)
 
     # Compare per-step logits over the (identical) decoded sequence.
-    c1, c2, c3 = tok.group_sequence(naive_flat.view(-1, 1))
+    c1, c2, c3 = tok.group_sequence(naive_flat.view(-1, 1), sequence_dim=0)
     naive_logits = model(naive_flat.view(-1, 1), c1, c2, c3)
     cached_logits = model.cached_forward(naive_flat.view(-1, 1), c1, c2, c3)
     max_diff = (naive_logits - cached_logits).abs().max().item()

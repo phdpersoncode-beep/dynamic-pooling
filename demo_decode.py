@@ -21,7 +21,8 @@ FIG = "docs/figures/generated_grouping.png"
 def sample_cached(model, tok, max_new=60, temperature=1.0, seed=0):
     torch.manual_seed(seed)
     state = model.init_state()
-    logit = model.step(state, tok.sos_id, *tok.group(tok.sos_id))
+    group_state = tok.init_group_state()
+    logit = model.step(state, tok.sos_id, *tok.group(tok.sos_id, group_state))
     seq = [tok.sos_id]
     for _ in range(max_new):
         probs = F.softmax(logit[-1, 0] / temperature, dim=-1)
@@ -29,7 +30,7 @@ def sample_cached(model, tok, max_new=60, temperature=1.0, seed=0):
         seq.append(nxt)
         if nxt == tok.eos_id:
             break
-        logit = model.step(state, nxt, *tok.group(nxt))
+        logit = model.step(state, nxt, *tok.group(nxt, group_state))
     return torch.tensor(seq)
 
 
@@ -57,7 +58,7 @@ def main():
     print("  b3_seq:", b3.tolist())
 
     # equivalence on this rich sequence: cached path vs naive path.
-    c1, c2, c3 = tok.group_sequence(tokens.view(-1, 1))
+    c1, c2, c3 = tok.group_sequence(tokens.view(-1, 1), sequence_dim=0)
     naive = model(tokens.view(-1, 1), c1, c2, c3)
     cached = model.cached_forward(tokens.view(-1, 1), c1, c2, c3)
     diff = (naive - cached).abs().max().item()

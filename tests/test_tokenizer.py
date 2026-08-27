@@ -32,6 +32,36 @@ def test_group_sequence_matches_scalar():
     assert torch.all(c3 <= c2) and torch.all(c2 <= c1)
 
 
+def test_custom_group_rule_is_shared_by_scalar_and_sequence_paths():
+    base = Tokenizer()
+    x7 = base.sym2idx["x7"]
+    x9 = base.sym2idx["x9"]
+
+    def rule(token_id, default, state):
+        if token_id == base.b1_id and state["previous_token_id"] != x7:
+            return 0, 0, 0
+        if token_id == x9:
+            return 1, 0, 0
+        return default
+
+    tok = Tokenizer(group_rule=rule)
+    tokens = torch.tensor([
+        tok.encode(["SOS", "b1", "x7", "b1", "x9", "EOS"]),
+        tok.encode(["SOS", "x7", "b1", "b2", "b1", "EOS"]),
+    ])
+    c1, c2, c3 = tok.group_sequence(tokens, sequence_dim=1)
+
+    assert c1.tolist() == [[0, 0, 0, 1, 1, 0], [0, 0, 1, 1, 0, 0]]
+    assert c2.tolist() == [[0, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0]]
+    assert not c3.any()
+
+    state = tok.init_group_state()
+    scalar = [tok.group(token_id, state) for token_id in tokens[0].tolist()]
+    assert scalar == list(zip(c1[0].tolist(), c2[0].tolist(), c3[0].tolist()))
+    assert state["previous_token_id"] == tok.eos_id
+    assert state["close_counts"] == [2, 0, 0]
+
+
 def test_encode_decode_roundtrip():
     tok = Tokenizer()
     syms = ["SOS", "x3", "b1", "x9", "b2", "EOS"]

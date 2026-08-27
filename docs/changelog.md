@@ -57,7 +57,8 @@ and the TODOs in `AGENTS.md`. Newest entries first.
       Cache speedup grows with length (1.8x @16 -> 3.0x @256 tokens), naive
       super-linear vs cached near-linear. Figures `benchmark_time.png`,
       `benchmark_speedup.png`, data `benchmark_results.json`.
-- [x] Full test suite (`tests/`, 15 tests) passes.
+- [x] Full test suite (`tests/`, 24 tests) passes, including explicit incomplete
+      groups, context-dependent grouping rules, and zero-layer stack configs.
 - [x] Final report: `docs/report.md`.
 
 All `AGENTS.md` KV-cache TODOs are addressed. The original non-cached path is

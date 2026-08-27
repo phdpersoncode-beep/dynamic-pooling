@@ -12,15 +12,27 @@ Paper: [Efficient Transformers with Dynamic Token Pooling](https://arxiv.org/abs
 uv sync
 ```
 
+## Three-level KV-cache experiment
+
+This branch adds a toy three-level hierarchy with both full-prefix and
+KV-cached inference. The implementation plan is in `docs/kv_cache_plan.md` and
+the results are summarized in `docs/report.md`.
+
+```bash
+uv run python generator.py
+uv run pytest
+uv run python train_toy.py
+uv run python demo_decode.py
+uv run python benchmark.py
+```
+
+The generated toy dataset is already checked in, so generation and training
+can be skipped when only testing decoding or the cache.
+
 ## Data:
-- Download & preprocess
-    - text8
-        - `bash scripts/get_text8.sh` 
-    - wiki40b 
-        - `bash scripts/get_wiki40b.sh $lang`
-        - where $lang is for example `vi`
-        - check [Link](https://www.tensorflow.org/datasets/catalog/wiki40b) for how the abbreviation of other languages
-        - Script first downloads wiki40b under `./data/wiki40b/$lang/`, and then applies our cleaners on top of it based on [text8](http://mattmahoney.net/dc/textdata) cleaning rules. Final training data sits under `./data/wiki40b/$lang/text8`. We found that for some systems there might occur some errors when downloading wiki40b using `datasets`. In this case after you manage to get the data just apply our cleaners on it.
+
+The original text8/wiki40b preprocessing assets are not part of this feature
+branch. The new experiment uses the rule-based toy data from `generator.py`.
 ## Training:
 - Training by default starts with a simple test that checks the autoregressive property of a model. We support grad accummulation, distributed training, half precision training.
 

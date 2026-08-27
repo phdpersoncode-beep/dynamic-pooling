@@ -92,9 +92,9 @@ def downsample(boundaries, hidden, null_group):
         Downsampling
 
         - The first element of boundaries tensor is always 0 and doesn't matter
-        - 1 starts a new group
+        - 1 closes the current group after this position
         - We append an extra "null" group at the beginning
-        - We discard last group because it won't be used (in terms of upsampling)
+        - We discard an incomplete trailing group
 
         Input:
             boundaries: B x L
@@ -123,8 +123,8 @@ def upsample(boundaries, shortened_hidden):
         Upsampling
 
         - The first element of boundaries tensor is always 0 and doesn't matter
-        - 1 starts a new group
-        - i-th group can be upsampled only to the tokens from (i+1)-th group, otherwise there's a leak
+        - 1 closes the current group after this position
+        - The newly completed group becomes visible at its closing position
 
         Input:
             boundaries: B x L
