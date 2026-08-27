@@ -1,12 +1,18 @@
 """Hardcoded training to fit a small three-level model on the toy dataset.
 
 The generated sequences are intentionally random (uniform x-tokens, random
-boundaries), so next-token loss cannot approach zero without enormous capacity;
-the point is simply to obtain a *trained* small model to exercise KV caching.
-Training uses batch size 1 (exact pooling; no ragged-batch padding) with
-gradient accumulation.
+boundaries), so on the full set next-token loss cannot approach zero without
+enormous capacity; it floors at the data entropy (~4.71 nats). The point is to
+obtain a genuinely *trained* small model to exercise KV caching. Training uses
+batch size 1 (exact pooling; no ragged-batch padding) with gradient
+accumulation.
+
+Defaults below are the hardcoded configuration. CLI flags only override them,
+e.g. `--subset 32 --epochs 300` demonstrates true overfitting (loss -> 0) on a
+memorizable subset.
 """
 
+import argparse
 import glob
 import os
 import time
@@ -30,8 +36,6 @@ EPOCHS = 20
 ACCUM = 20          # sequences per optimizer step
 LR = 3e-4
 SEED = 0
-CKPT_PATH = "checkpoints/toy.pt"
-LOSS_FIG = "docs/figures/train_loss.png"
 
 
 def latest_dataset(root="tokenizer_data"):
@@ -40,72 +44,87 @@ def latest_dataset(root="tokenizer_data"):
     return dirs[-1]
 
 
-def main():
-    torch.manual_seed(SEED)
+def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
+          ckpt_path="checkpoints/toy.pt", loss_fig="docs/figures/train_loss.png"):
+    torch.manual_seed(seed)
     tok = Tokenizer()
     ds_dir = latest_dataset()
     tokens, b1, b2, b3 = load_dataset(ds_dir)   # N x S
+    if subset is not None:
+        tokens, b1, b2, b3 = tokens[:subset], b1[:subset], b2[:subset], b3[:subset]
     n, seq_len = tokens.shape
     print(f"dataset {ds_dir}: {n} seqs of len {seq_len}")
 
     model = HourglassLM(n_token=len(tok), **CONFIG)
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f"model params: {n_params/1e3:.1f}k")
-    opt = torch.optim.Adam(model.parameters(), lr=LR)
+    print(f"model params: {sum(p.numel() for p in model.parameters())/1e3:.1f}k")
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # Pre-transpose to T x 1 views per sequence.
-    data_all = tokens.transpose(0, 1)   # S x N
-    c1_all = b1.transpose(0, 1)
-    c2_all = b2.transpose(0, 1)
-    c3_all = b3.transpose(0, 1)
+    data_all = tokens.transpose(0, 1)
+    c1_all, c2_all, c3_all = (b1.transpose(0, 1), b2.transpose(0, 1),
+                              b3.transpose(0, 1))
 
     losses = []
     model.train()
-    for epoch in range(EPOCHS):
+    for epoch in range(epochs):
         order = torch.randperm(n)
         opt.zero_grad()
         running, count = 0.0, 0
         t0 = time.time()
         for j, idx in enumerate(order.tolist()):
-            data = data_all[:-1, idx:idx + 1]    # (S-1) x 1 input
-            target = data_all[1:, idx:idx + 1]   # (S-1) x 1 next-token
+            data = data_all[:-1, idx:idx + 1]
+            target = data_all[1:, idx:idx + 1]
             c1 = c1_all[:-1, idx:idx + 1]
             c2 = c2_all[:-1, idx:idx + 1]
             c3 = c3_all[:-1, idx:idx + 1]
-
             _, loss = model(data, c1, c2, c3, target=target)
             loss = loss.mean()
-            (loss / ACCUM).backward()
+            (loss / accum).backward()
             running += loss.item()
             count += 1
-            if (j + 1) % ACCUM == 0:
+            if (j + 1) % accum == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
                 opt.step()
                 opt.zero_grad()
-        # flush remainder
         torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
         opt.step()
         opt.zero_grad()
         avg = running / count
         losses.append(avg)
-        print(f"epoch {epoch:2d}  loss {avg:.4f}  ({time.time()-t0:.1f}s)")
+        print(f"epoch {epoch:3d}  loss {avg:.4f}  ({time.time()-t0:.1f}s)")
 
-    os.makedirs(os.path.dirname(CKPT_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
     torch.save({"config": CONFIG, "state_dict": model.state_dict(),
                 "vocab_size": len(tok), "dataset": ds_dir,
-                "losses": losses}, CKPT_PATH)
-    print(f"saved checkpoint to {CKPT_PATH}")
+                "losses": losses, "subset": subset}, ckpt_path)
+    print(f"saved checkpoint to {ckpt_path}")
 
     plt.figure(figsize=(6, 4))
     plt.plot(range(len(losses)), losses, marker="o", ms=3)
+    plt.axhline(4.71, color="gray", ls="--", lw=1, label="data entropy ~4.71")
     plt.xlabel("epoch")
     plt.ylabel("mean next-token loss (nats)")
-    plt.title("Toy overfit training loss")
+    plt.title(f"Training loss ({n} seqs)")
+    plt.legend()
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    os.makedirs(os.path.dirname(LOSS_FIG), exist_ok=True)
-    plt.savefig(LOSS_FIG, dpi=130)
-    print(f"saved loss curve to {LOSS_FIG}")
+    os.makedirs(os.path.dirname(loss_fig) or ".", exist_ok=True)
+    plt.savefig(loss_fig, dpi=130)
+    print(f"saved loss curve to {loss_fig}")
+    return losses
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--epochs", type=int, default=EPOCHS)
+    ap.add_argument("--lr", type=float, default=LR)
+    ap.add_argument("--accum", type=int, default=ACCUM)
+    ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--subset", type=int, default=None)
+    ap.add_argument("--ckpt", default="checkpoints/toy.pt")
+    ap.add_argument("--fig", default="docs/figures/train_loss.png")
+    args = ap.parse_args()
+    train(epochs=args.epochs, lr=args.lr, accum=args.accum, seed=args.seed,
+          subset=args.subset, ckpt_path=args.ckpt, loss_fig=args.fig)
 
 
 if __name__ == "__main__":
