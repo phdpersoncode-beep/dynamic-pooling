@@ -1,6 +1,45 @@
 import torch
 
 
+def level_boundaries(c1, c2, c3):
+    """Derive the pooling-boundary array at each hierarchy level.
+
+    Inputs are causal close-events at token resolution (cumulative: c3<=c2<=c1):
+        c1, c2, c3: B x T  (1 where the position closes that level)
+
+    Returns:
+        bnd1: B x T          boundaries used to pool tokens -> level 1
+        bnd2: B x (K1max+1)  boundaries used to pool level 1 -> level 2
+        bnd3: B x (K2max+1)  boundaries used to pool level 2 -> level 3
+
+    bnd2/bnd3 live at the *pooled* resolution and include the leading null-group
+    slot (index 0, always 0). bnd2[j] marks whether the j-th completed level-1
+    group also closed a level-2 group; bnd3[m] the analogous fact for level 2.
+    This is obtained by scattering the coarser close-event onto the slot each
+    boundary token occupies in the pooled tensor (cumsum of the finer event).
+    """
+    c1 = c1.long()
+    c2 = c2.long()
+    c3 = c3.long()
+    B = c1.size(0)
+
+    bnd1 = c1.float()
+
+    k1_max = int(c1.sum(dim=1).max().item())
+    slot1 = torch.cumsum(c1, dim=1) * c1  # boundary token -> its slot 1..K1; else 0
+    bnd2 = torch.zeros(B, k1_max + 1, device=c1.device)
+    bnd2.scatter_(1, slot1, (c2 * c1).float())
+    bnd2[:, 0] = 0.0
+
+    k2_max = int(c2.sum(dim=1).max().item())
+    slot2 = torch.cumsum(c2, dim=1) * c2
+    bnd3 = torch.zeros(B, k2_max + 1, device=c1.device)
+    bnd3.scatter_(1, slot2, (c3 * c2).float())
+    bnd3[:, 0] = 0.0
+
+    return bnd1, bnd2, bnd3
+
+
 def final(foo,
           upsample):
     """

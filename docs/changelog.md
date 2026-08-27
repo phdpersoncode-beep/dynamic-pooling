@@ -28,3 +28,13 @@ and the TODOs in `AGENTS.md`. Newest entries first.
       with completed (solid) vs incomplete (hatched) groups and boundary
       markers. Figures under `docs/figures/` (`grouping_demo.png`,
       `dataset_sample_{0,1}.png`).
+- [x] Three-level `HourglassLM` in `hourglass.py` (reuses the existing
+      relative-attention blocks). Two paths:
+    - naive full-recompute `forward` (used for training and as the reference);
+    - incremental KV-cached `step`/`cached_forward` (batch size 1), advancing
+      each of the 7 stacks at its own rate.
+  Added `shortening.level_boundaries` to derive the per-level pooling-boundary
+  arrays (with the null-group slot) from the causal close-events.
+  Tests (`tests/test_model.py`) pass:
+    - naive path is causal (prefix logits == full-sequence logits);
+    - **cached logits == naive logits at every step**, across layer configs.

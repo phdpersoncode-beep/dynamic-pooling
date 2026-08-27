@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from shortening import downsample, upsample
+from shortening import downsample, upsample, level_boundaries
 
 
 @torch.jit.script
@@ -179,6 +179,51 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
 
         return output
 
+    def step(self, w_new, r, r_w_bias, r_r_bias, cache_k, cache_v):
+        """Incremental attention for one new position with a KV cache.
+
+        w_new: 1 x B x C (the single new position)
+        r:     L x 1 x C positional embeddings for distances L-1..0, where L is
+               the cache length *after* appending the new key.
+        cache_k / cache_v: L-1 x B x n_head x d_head or None.
+
+        Returns (output 1 x B x C, new_cache_k L x B x n_head x d_head,
+        new_cache_v). A single query attends to all L keys, all at positions
+        <= the query, so no causal mask is needed.
+        """
+        assert not self.pre_lnorm
+        bsz = w_new.size(1)
+
+        w_heads = self.qkv_net(w_new)
+        w_q, w_k, w_v = torch.chunk(w_heads, 3, dim=-1)
+        w_q = w_q.view(1, bsz, self.n_head, self.d_head)
+        w_k = w_k.view(1, bsz, self.n_head, self.d_head)
+        w_v = w_v.view(1, bsz, self.n_head, self.d_head)
+
+        if cache_k is not None:
+            w_k = torch.cat([cache_k, w_k], dim=0)
+            w_v = torch.cat([cache_v, w_v], dim=0)
+        klen = w_k.size(0)
+
+        r_head_k = self.r_net(r).view(klen, self.n_head, self.d_head)
+
+        rw_q = w_q + r_w_bias
+        AC = torch.einsum('ibnd,jbnd->bnij', rw_q, w_k)   # B x nh x 1 x L
+        rr_q = w_q + r_r_bias
+        BD = torch.einsum('ibnd,jnd->bnij', rr_q, r_head_k)  # B x nh x 1 x L
+        attn_score = add_and_scale(AC, BD, self.scale)
+
+        attn_prob = F.softmax(attn_score, dim=3)
+        attn_prob = self.dropatt(attn_prob)
+
+        attn_vec = torch.einsum('bnij,jbnd->ibnd', attn_prob, w_v)
+        attn_vec = attn_vec.contiguous().view(1, bsz, self.n_head * self.d_head)
+
+        attn_out = self.o_net(attn_vec)
+        attn_out = self.drop(attn_out)
+        output = self.layer_norm(w_new + attn_out)
+        return output, w_k, w_v
+
 
 class RelPartialLearnableDecoderLayer(nn.Module):
     def __init__(
@@ -211,6 +256,12 @@ class RelPartialLearnableDecoderLayer(nn.Module):
         output = self.pos_ff(output)
 
         return output
+
+    def step(self, x_new, r, r_w_bias, r_r_bias, cache_k, cache_v):
+        output, k, v = self.dec_attn.step(
+            x_new, r, r_w_bias, r_r_bias, cache_k, cache_v)
+        output = self.pos_ff(output)
+        return output, k, v
 
 
 class MemTransformerLM(nn.Module):
@@ -373,3 +424,219 @@ class MemTransformerLM(nn.Module):
         else:
             # Generation mode, we return raw logits
             return logit
+
+
+# Stack order in the three-level hourglass architecture.
+STACK_NAMES = ['pre', 'l1_down', 'l2_down', 'l3', 'l2_up', 'l1_up', 'post']
+
+
+class HourglassLM(nn.Module):
+    """Three-level dynamic-pooling transformer.
+
+    Architecture (with residuals joining matching-resolution reps):
+
+        token transformer (pre)
+        -> pool L1 -> L1 transformer
+        -> pool L2 -> L2 transformer
+        -> pool L3 -> L3 transformer
+        -> upsample L3 -> L2 transformer (up)   [+ res L2]
+        -> upsample L2 -> L1 transformer (up)   [+ res L1]
+        -> upsample L1 -> token transformer     [+ res token]
+        -> logits
+
+    Two equivalent inference paths are provided: a naive full-recompute
+    `forward`, and an incremental KV-cached `step`/`cached_forward`.
+    """
+
+    def __init__(self, n_token, n_head, d_model, d_head, d_inner,
+                 dropout=0.0, dropatt=0.0, activation_function='gelu',
+                 layers=(1, 1, 1, 1, 1, 1, 1)):
+        super().__init__()
+        assert len(layers) == 7
+        self.n_token = n_token
+        self.d_model = d_model
+        self.n_head = n_head
+        self.d_head = d_head
+
+        self.word_emb = nn.Embedding(n_token, d_model)
+        self.drop = nn.Dropout(dropout)
+
+        self.pos_emb = PositionalEmbedding(d_model)
+        self.r_w_bias = nn.Parameter(torch.Tensor(n_head, d_head).zero_())
+        self.r_r_bias = nn.Parameter(torch.Tensor(n_head, d_head).zero_())
+
+        def make_layers(n):
+            return nn.ModuleList([
+                RelPartialLearnableDecoderLayer(
+                    n_head, d_model, d_head, d_inner, dropout,
+                    dropatt=dropatt, pre_lnorm=False,
+                    activation_function=activation_function)
+                for _ in range(n)
+            ])
+
+        self.stacks = nn.ModuleDict(
+            {name: make_layers(n) for name, n in zip(STACK_NAMES, layers)})
+
+        # One learned null-group per down level + its post-pool LayerNorm.
+        self.null_1 = nn.Parameter(torch.Tensor(1, 1, d_model).normal_())
+        self.null_2 = nn.Parameter(torch.Tensor(1, 1, d_model).normal_())
+        self.null_3 = nn.Parameter(torch.Tensor(1, 1, d_model).normal_())
+        self.down_ln1 = nn.LayerNorm(d_model)
+        self.down_ln2 = nn.LayerNorm(d_model)
+        self.down_ln3 = nn.LayerNorm(d_model)
+
+        self.final_cast = nn.Linear(d_model, n_token)
+        self.crit = nn.CrossEntropyLoss(reduction='none')
+
+    # ---- shared full-sequence stack ------------------------------------
+    def _run_stack(self, core_input, layers):
+        qlen = core_input.size(0)
+        dec_attn_mask = torch.triu(
+            core_input.new_ones(qlen, qlen), diagonal=1).bool()
+        pos_seq = torch.arange(qlen - 1, -1, -1.0,
+                               device=core_input.device, dtype=core_input.dtype)
+        pos_emb = self.drop(self.pos_emb(pos_seq))
+        out = core_input
+        for layer in layers:
+            out = layer(out, pos_emb, self.r_w_bias, self.r_r_bias, dec_attn_mask)
+        return out
+
+    # ---- naive full-recompute forward ----------------------------------
+    def forward(self, data, c1, c2, c3, target=None):
+        """data, c1, c2, c3: T x B. Returns logits (T x B x V), or (logits,
+        loss T x B) when target is given."""
+        tgt_len, bsz = data.size(0), data.size(1)
+        hidden = self.drop(self.word_emb(data))
+
+        h0 = self._run_stack(hidden, self.stacks['pre'])
+        res0 = h0
+
+        bnd1, bnd2, bnd3 = level_boundaries(
+            c1.transpose(0, 1).contiguous(),
+            c2.transpose(0, 1).contiguous(),
+            c3.transpose(0, 1).contiguous())
+
+        h1 = self.down_ln1(downsample(bnd1, h0, self.null_1))
+        h1 = self._run_stack(h1, self.stacks['l1_down'])
+        res1 = h1
+
+        h2 = self.down_ln2(downsample(bnd2, h1, self.null_2))
+        h2 = self._run_stack(h2, self.stacks['l2_down'])
+        res2 = h2
+
+        h3 = self.down_ln3(downsample(bnd3, h2, self.null_3))
+        h3 = self._run_stack(h3, self.stacks['l3'])
+
+        e2 = self._run_stack(upsample(bnd3, h3) + res2, self.stacks['l2_up'])
+        f1 = self._run_stack(upsample(bnd2, e2) + res1, self.stacks['l1_up'])
+        g0 = self._run_stack(upsample(bnd1, f1) + res0, self.stacks['post'])
+
+        logit = self.final_cast(g0)
+
+        if target is not None:
+            loss = self.crit(logit.view(-1, logit.size(-1)), target.reshape(-1))
+            loss = loss.view(tgt_len, bsz)
+            return logit, loss
+        return logit
+
+    # ---- incremental KV-cached path (batch size 1) ---------------------
+    def _stack_step(self, layers, x_new, caches):
+        L = 1 if caches[0] is None else caches[0][0].size(0) + 1
+        pos_seq = torch.arange(L - 1, -1, -1.0,
+                               device=x_new.device, dtype=x_new.dtype)
+        r = self.pos_emb(pos_seq)
+        out = x_new
+        new_caches = []
+        for i, layer in enumerate(layers):
+            ck, cv = (None, None) if caches[i] is None else caches[i]
+            out, k, v = layer.step(out, r, self.r_w_bias, self.r_r_bias, ck, cv)
+            new_caches.append((k, v))
+        return out, new_caches
+
+    def init_state(self):
+        state = {
+            'caches': {n: [None] * len(self.stacks[n]) for n in STACK_NAMES},
+            'l1_sum': None, 'l1_cnt': 0,
+            'l2_sum': None, 'l2_cnt': 0,
+            'l3_sum': None, 'l3_cnt': 0,
+            'h3_last': None, 'e2_last': None, 'f1_last': None,
+        }
+        c = state['caches']
+        # Prime the pooled stacks with their processed null group (index 0).
+        h1_null, c['l1_down'] = self._stack_step(
+            self.stacks['l1_down'], self.down_ln1(self.null_1), c['l1_down'])
+        h2_null, c['l2_down'] = self._stack_step(
+            self.stacks['l2_down'], self.down_ln2(self.null_2), c['l2_down'])
+        h3_null, c['l3'] = self._stack_step(
+            self.stacks['l3'], self.down_ln3(self.null_3), c['l3'])
+        # Level-2/3 pooling accumulators begin with the processed null.
+        state['l2_sum'], state['l2_cnt'] = h1_null.clone(), 1
+        state['l3_sum'], state['l3_cnt'] = h2_null.clone(), 1
+        state['h3_last'] = h3_null
+        # Prime the up-path stacks with the null chain.
+        e2_null, c['l2_up'] = self._stack_step(
+            self.stacks['l2_up'], state['h3_last'] + h2_null, c['l2_up'])
+        state['e2_last'] = e2_null
+        f1_null, c['l1_up'] = self._stack_step(
+            self.stacks['l1_up'], e2_null + h1_null, c['l1_up'])
+        state['f1_last'] = f1_null
+        return state
+
+    def step(self, state, token_id, c1, c2, c3):
+        """Advance one full-resolution token. c1/c2/c3 are its close events
+        (cumulative). Returns logits (1 x 1 x V)."""
+        c = state['caches']
+        dev = self.r_w_bias.device
+        tok = torch.tensor([[int(token_id)]], device=dev)
+        x = self.drop(self.word_emb(tok))
+
+        a_t, c['pre'] = self._stack_step(self.stacks['pre'], x, c['pre'])
+        res0 = a_t
+        state['l1_sum'] = a_t.clone() if state['l1_sum'] is None else state['l1_sum'] + a_t
+        state['l1_cnt'] += 1
+
+        if c1:
+            g1 = self.down_ln1(state['l1_sum'] / state['l1_cnt'])
+            state['l1_sum'], state['l1_cnt'] = None, 0
+            h1_new, c['l1_down'] = self._stack_step(self.stacks['l1_down'], g1, c['l1_down'])
+            res1 = h1_new
+            state['l2_sum'] = h1_new.clone() if state['l2_sum'] is None else state['l2_sum'] + h1_new
+            state['l2_cnt'] += 1
+
+            if c2:
+                g2 = self.down_ln2(state['l2_sum'] / state['l2_cnt'])
+                state['l2_sum'], state['l2_cnt'] = None, 0
+                h2_new, c['l2_down'] = self._stack_step(self.stacks['l2_down'], g2, c['l2_down'])
+                res2 = h2_new
+                state['l3_sum'] = h2_new.clone() if state['l3_sum'] is None else state['l3_sum'] + h2_new
+                state['l3_cnt'] += 1
+
+                if c3:
+                    g3 = self.down_ln3(state['l3_sum'] / state['l3_cnt'])
+                    state['l3_sum'], state['l3_cnt'] = None, 0
+                    h3_new, c['l3'] = self._stack_step(self.stacks['l3'], g3, c['l3'])
+                    state['h3_last'] = h3_new
+
+                e2_new, c['l2_up'] = self._stack_step(
+                    self.stacks['l2_up'], state['h3_last'] + res2, c['l2_up'])
+                state['e2_last'] = e2_new
+
+            f1_new, c['l1_up'] = self._stack_step(
+                self.stacks['l1_up'], state['e2_last'] + res1, c['l1_up'])
+            state['f1_last'] = f1_new
+
+        g0, c['post'] = self._stack_step(
+            self.stacks['post'], state['f1_last'] + res0, c['post'])
+        return self.final_cast(g0)
+
+    def cached_forward(self, data, c1, c2, c3):
+        """Run the cached path over a full given sequence (T x 1). Returns
+        logits T x 1 x V. Used to check equivalence with `forward`."""
+        assert data.size(1) == 1, "cached path is batch size 1"
+        state = self.init_state()
+        logits = []
+        for t in range(data.size(0)):
+            lg = self.step(state, data[t, 0].item(),
+                           int(c1[t, 0]), int(c2[t, 0]), int(c3[t, 0]))
+            logits.append(lg)
+        return torch.cat(logits, dim=0)
