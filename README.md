@@ -9,8 +9,7 @@ Paper: [Efficient Transformers with Dynamic Token Pooling](https://arxiv.org/abs
 ## Environment:
 
 ```
-conda create -n dynamic-pooling python=3.8
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Data:
