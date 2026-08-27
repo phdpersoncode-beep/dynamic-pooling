@@ -22,11 +22,6 @@ pip install -r requirements.txt
         - where $lang is for example `vi`
         - check [Link](https://www.tensorflow.org/datasets/catalog/wiki40b) for how the abbreviation of other languages
         - Script first downloads wiki40b under `./data/wiki40b/$lang/`, and then applies our cleaners on top of it based on [text8](http://mattmahoney.net/dc/textdata) cleaning rules. Final training data sits under `./data/wiki40b/$lang/text8`. We found that for some systems there might occur some errors when downloading wiki40b using `datasets`. In this case after you manage to get the data just apply our cleaners on it.
-- Train Unigram
-    - `python tokenizer_data/train_tokenizer.py $vocab_size $dataset`
-    - `$vocab_size` is the integer target vocab size of Unigram
-    - `$dataset` is `text8` for text8, `wiki40b/$lang/text8` for wiki40b
-
 ## Training:
 - Training by default starts with a simple test that checks the autoregressive property of a model. We support grad accummulation, distributed training, half precision training.
 
@@ -44,20 +39,12 @@ Repository is a fork from: https://github.com/NVIDIA/DeepLearningExamples/tree/m
 We decided to fork from the Nvidia implementation of Transformer XL, because Transformer XL is strong and established baseline in Language Modelling, and Nvidia code is well-optimised for the current hardware.
 
 - ./configs/ 
-    - we've prepared configs for all models presented in our work, i.e., Vanilla, Fixed, Entropy, Unigram, Whitespaces, Gumbel
-- ./tokenizer_data/ 
-    - Pretrained tokenizers using HuggingFace/Sentencepiece library for all datasets we've tested in the paper. You can train them yourself by running:
-        - ```python ./tokenizer_data/train_tokenizer.py $ARGS```
-        - Args are defined in the `./tokenizer_data/train_tokenizer.py`
+    - Contains configs for the no-pooling baseline and whitespace boundaries.
 - ./cleaners/
     - Implementation of preprocessing rules applied to raw `wiki40b` dataesets and `cc-100` dataset
-- Boundary Predictor:
-    - {Vanilla, Fixed, Whitespaces}
-        - These approaches do not need a boundary predictor. Boundaries are extracted from the data itself in the `boundary_creator.py`, then used in the DataLoader.
-    - {Unigram}
-        - Segmentation based on Unigram needs a Boundary Predictor, because Unigram itself is not autoregressive. We teach the Boundary Predictor module defined in `hourglass.py` to predict the Unigram segmentation. Boundary Predictor is autoregressive, which makes the whole model autoregressive as well. Unigram segmentation is extracted in `boundary_creator.py`.
-    - {Entropy, Gumbel}
-        - These approaches are end-to-end and use the main model to train Boundary Predictor. Entire logic is implemented in the `hourglass.py`.
+- Boundaries:
+    - Whitespace boundaries are extracted in `boundary_creator.py`, then supplied through the data loader.
+    - The no-pooling baseline does not create boundaries.
 
 ## Issues:
 

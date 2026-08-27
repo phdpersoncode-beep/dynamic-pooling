@@ -213,98 +213,10 @@ class RelPartialLearnableDecoderLayer(nn.Module):
         return output
 
 
-class BoundaryPredictor(nn.Module):
-    def __init__(self, d_model, d_inner, activation_function,
-                 temp, prior, bp_type, threshold=0.5):
-        super().__init__()
-        self.temp = temp
-        self.prior = prior
-        self.bp_type = bp_type
-        self.threshold = threshold
-
-        if activation_function == 'relu':
-            activation_fn = nn.ReLU(inplace=True)
-        elif activation_function == 'gelu':
-            activation_fn = torch.nn.GELU()
-
-        self.boundary_predictor = nn.Sequential(
-            nn.Linear(d_model, d_inner),
-            activation_fn,
-            nn.Linear(d_inner, 1),
-        )
-
-        self.loss = nn.BCEWithLogitsLoss()
-
-    def forward(self, hidden):
-        # Hidden is of shape [seq_len x bs x d_model]
-        # Boundaries we return are [bs x seq_len]
-        boundary_logits = self.boundary_predictor(hidden).squeeze(-1).transpose(0, 1)
-        boundary_probs = torch.sigmoid(boundary_logits)
-
-        if self.bp_type == 'gumbel':
-            bernoulli = torch.distributions.relaxed_bernoulli.RelaxedBernoulli(
-                temperature=self.temp,
-                probs=boundary_probs,
-            )
-
-            soft_boundaries = bernoulli.rsample()
-
-            hard_boundaries = (soft_boundaries > self.threshold).float()
-            hard_boundaries = (
-                hard_boundaries - soft_boundaries.detach() + soft_boundaries
-            )
-        elif self.bp_type in ['entropy', 'unigram']:
-            soft_boundaries = boundary_probs
-            hard_boundaries = (soft_boundaries > self.threshold).float()
-
-        return soft_boundaries, hard_boundaries
-
-    def calc_loss(self, preds, gt):
-        # B x T
-        if self.bp_type in ['entropy', 'unigram']:
-            assert preds is not None and gt is not None
-            return self.loss(preds, gt.float())
-        elif self.bp_type in ['gumbel']:
-            assert gt is None
-            binomial = torch.distributions.binomial.Binomial(
-                preds.size(-1),
-                probs=torch.Tensor([self.prior]).to(preds.device)
-            )
-            loss_boundaries = -binomial.log_prob(
-                preds.sum(dim=-1)
-            ).mean() / preds.size(-1)
-
-            return loss_boundaries
-
-    def calc_stats(self, preds, gt):
-        # B x T
-        preds, gt = preds.bool(), gt.bool()
-        TP = ((preds == gt) & preds).sum().item()
-        FP = ((preds != gt) & preds).sum().item()
-        FN = ((preds != gt) & (~preds)).sum().item()
-
-        acc = (preds == gt).sum().item() / gt.numel()
-
-        if TP == 0:
-            precision, recall = 0, 0
-        else:
-            precision = TP / (TP + FP)
-            recall = TP / (TP + FN)
-
-        stats = {
-            'acc': acc,
-            'precision': precision,
-            'recall': recall
-        }
-
-        return stats
-
-
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_head, d_model, d_head, d_inner,
                  dropout, dropatt, pre_lnorm, model_config,
-                 activation_function, boundaries_type, spikes_left,
-                 temp, prior,
+                 activation_function, boundaries_type,
                  ):
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
@@ -341,7 +253,6 @@ class MemTransformerLM(nn.Module):
         pre_layers, (shortened_layers, ), post_layers = eval(model_config)
 
         self.boundaries_type = boundaries_type
-        self.is_bp = boundaries_type in ['unigram', 'entropy', 'gumbel']
 
         if post_layers == 0 and shortened_layers == 0:
             assert boundaries_type == 'none'
@@ -359,18 +270,6 @@ class MemTransformerLM(nn.Module):
             ])
 
             self.down_ln = nn.LayerNorm(d_model)
-
-            # Boundary predictor
-            if self.is_bp:
-                self.boundary_predictor = BoundaryPredictor(
-                    d_model=d_model,
-                    d_inner=d_inner,
-                    activation_function=activation_function,
-                    temp=temp,
-                    prior=prior,
-                    bp_type=boundaries_type,
-                )
-                self.spikes_left = spikes_left
 
         self.final_cast = nn.Linear(d_model, n_token)
         self.crit = torch.nn.CrossEntropyLoss(reduction='none')
@@ -396,15 +295,6 @@ class MemTransformerLM(nn.Module):
             )
 
         return core_out
-
-    def get_spikes(self, vector):
-        total = torch.ones_like(vector).bool()
-
-        for i in range(1, self.spikes_left + 1, 1):
-            mask = vector[i:] > vector[:-i]
-            total[i:] &= mask
-
-        return total
 
     def forward(self,
                 data,
@@ -433,13 +323,8 @@ class MemTransformerLM(nn.Module):
             if i == 1:  # Downsampling
                 residual = hidden
 
-                if self.boundaries_type in ['fixed', 'whitespaces']:
-                    # T x B
-                    hard_boundaries = boundaries_gt.float().transpose(0, 1)
-                    # B x T
-                else:
-                    soft_boundaries, hard_boundaries = self.boundary_predictor(hidden)
-                    # B x T
+                # T x B -> B x T
+                hard_boundaries = boundaries_gt.float().transpose(0, 1)
 
                 hidden = downsample(
                     boundaries=hard_boundaries,
@@ -476,55 +361,6 @@ class MemTransformerLM(nn.Module):
         if self.training or target is not None:
             # T x B x C
             assert hidden.size(0) == target.size(0)
-
-            # Boundary predictor loss
-            if self.is_bp:
-                if self.boundaries_type == 'entropy':
-                    entropy = -torch.nn.functional.log_softmax(
-                        logit, dim=-1
-                    ) * torch.nn.functional.softmax(logit, dim=-1)
-
-                    entropy = torch.sum(entropy, dim=-1)
-                    # T x B
-
-                    target_boundaries = self.get_spikes(entropy).transpose(0, 1)
-                    # target_boundaries: B x T
-                elif self.boundaries_type == 'unigram':
-                    # T x B
-                    target_boundaries = boundaries_gt[-tgt_len:].transpose(0, 1)
-                    # B x T
-                elif self.boundaries_type == 'gumbel':
-                    target_boundaries = None
-
-                soft_boundaries = soft_boundaries[:, -tgt_len:]
-                hard_boundaries = hard_boundaries[:, -tgt_len:]
-
-                if self.boundaries_type in ['unigram', 'entropy']:
-                    assert target_boundaries.sum().item() > 0
-
-                    loss_boundaries = self.boundary_predictor.calc_loss(
-                        soft_boundaries, target_boundaries
-                    )
-
-                    bp_stats = self.boundary_predictor.calc_stats(
-                        hard_boundaries, target_boundaries
-                    )
-
-                    for k, v in bp_stats.items():
-                        stats[f'{k}'] = v
-                elif self.boundaries_type == 'gumbel':
-                    loss_boundaries = self.boundary_predictor.calc_loss(
-                        preds=hard_boundaries, gt=None
-                    )
-
-                    bp_stats = self.boundary_predictor.calc_stats(
-                        hard_boundaries, (data == 0)[-tgt_len:].transpose(0, 1)
-                    )
-
-                    for k, v in bp_stats.items():
-                        stats[f'{k}'] = v
-
-                stats['loss_boundaries'] = loss_boundaries.item()
 
             # LM loss
             logit = logit.view(-1, logit.size(-1))

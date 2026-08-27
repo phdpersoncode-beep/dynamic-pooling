@@ -19,11 +19,6 @@ model: &model
 
 boundaries: &boundaries
    boundaries_type: 'none'
-   tokenizer_path: './tokenizer_data/spm/text8'
-   fixed_sf: 2
-   spikes_left: 2
-   temp: 0.5
-   prior: 0.2
 
 eval: &eval
    eval_interval: 10000
