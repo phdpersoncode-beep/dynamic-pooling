@@ -34,6 +34,9 @@ env/
 venv/
 ENV/
 
+# Training logs (checkpoints themselves are committed)
+checkpoints/*.log
+
 # Test and tooling caches
 .pytest_cache/
 .mypy_cache/
