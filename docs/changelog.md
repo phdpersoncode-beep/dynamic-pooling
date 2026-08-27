@@ -24,3 +24,7 @@ and the TODOs in `AGENTS.md`. Newest entries first.
       derived via `group()`. Tests in `tests/test_generator.py`.
 - [x] Generated the 1000-sequence training set (`--seq-len 64`, p1/p2/p3 =
       0.20/0.08/0.03) under `tokenizer_data/<timestamp>/`.
+- [x] Grouping visualization (`visualize.py`): draws the three nested levels
+      with completed (solid) vs incomplete (hatched) groups and boundary
+      markers. Figures under `docs/figures/` (`grouping_demo.png`,
+      `dataset_sample_{0,1}.png`).
