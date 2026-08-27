@@ -38,3 +38,14 @@ and the TODOs in `AGENTS.md`. Newest entries first.
   Tests (`tests/test_model.py`) pass:
     - naive path is causal (prefix logits == full-sequence logits);
     - **cached logits == naive logits at every step**, across layer configs.
+- [x] Greedy decoding in `inference.py`:
+    - `greedy_decode_naive` (batched, full recompute) tracking `x_seq` and
+      `b1/b2/b3_seq` derived via `group()`;
+    - `greedy_decode_cached` (batch 1, KV cache);
+    - `decode_equivalence` proves both emit identical tokens and per-step
+      logits. Tests in `tests/test_inference.py` pass.
+- [~] Training (`train_toy.py`): small model (d_model 64, layers 2/2/1/1/1/2/2,
+      ~448k params), batch size 1 with grad accumulation, running to overfit
+      the 1000-sequence set. (Sequences are random by construction, so loss
+      floors well above zero; the aim is a genuinely trained small model for
+      the cache demo.)
