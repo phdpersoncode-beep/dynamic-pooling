@@ -179,51 +179,6 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
 
         return output
 
-    def step(self, w_new, r, r_w_bias, r_r_bias, cache_k, cache_v):
-        """Incremental attention for one new position with a KV cache.
-
-        w_new: 1 x B x C (the single new position)
-        r:     L x 1 x C positional embeddings for distances L-1..0, where L is
-               the cache length *after* appending the new key.
-        cache_k / cache_v: L-1 x B x n_head x d_head or None.
-
-        Returns (output 1 x B x C, new_cache_k L x B x n_head x d_head,
-        new_cache_v). A single query attends to all L keys, all at positions
-        <= the query, so no causal mask is needed.
-        """
-        assert not self.pre_lnorm
-        bsz = w_new.size(1)
-
-        w_heads = self.qkv_net(w_new)
-        w_q, w_k, w_v = torch.chunk(w_heads, 3, dim=-1)
-        w_q = w_q.view(1, bsz, self.n_head, self.d_head)
-        w_k = w_k.view(1, bsz, self.n_head, self.d_head)
-        w_v = w_v.view(1, bsz, self.n_head, self.d_head)
-
-        if cache_k is not None:
-            w_k = torch.cat([cache_k, w_k], dim=0)
-            w_v = torch.cat([cache_v, w_v], dim=0)
-        klen = w_k.size(0)
-
-        r_head_k = self.r_net(r).view(klen, self.n_head, self.d_head)
-
-        rw_q = w_q + r_w_bias
-        AC = torch.einsum('ibnd,jbnd->bnij', rw_q, w_k)   # B x nh x 1 x L
-        rr_q = w_q + r_r_bias
-        BD = torch.einsum('ibnd,jnd->bnij', rr_q, r_head_k)  # B x nh x 1 x L
-        attn_score = add_and_scale(AC, BD, self.scale)
-
-        attn_prob = F.softmax(attn_score, dim=3)
-        attn_prob = self.dropatt(attn_prob)
-
-        attn_vec = torch.einsum('bnij,jbnd->ibnd', attn_prob, w_v)
-        attn_vec = attn_vec.contiguous().view(1, bsz, self.n_head * self.d_head)
-
-        attn_out = self.o_net(attn_vec)
-        attn_out = self.drop(attn_out)
-        output = self.layer_norm(w_new + attn_out)
-        return output, w_k, w_v
-
     def step_batched(self, x_in, k_buf, v_buf, fill, remb, key_mask,
                      r_w_bias, r_r_bias):
         """Batched incremental attention with preallocated, ragged caches.
@@ -302,12 +257,6 @@ class RelPartialLearnableDecoderLayer(nn.Module):
         output = self.pos_ff(output)
 
         return output
-
-    def step(self, x_new, r, r_w_bias, r_r_bias, cache_k, cache_v):
-        output, k, v = self.dec_attn.step(
-            x_new, r, r_w_bias, r_r_bias, cache_k, cache_v)
-        output = self.pos_ff(output)
-        return output, k, v
 
     def step_batched(self, x_in, k_buf, v_buf, fill, remb, key_mask,
                      r_w_bias, r_r_bias):
