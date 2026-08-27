@@ -32,16 +32,25 @@ Make sure to preserve the original non-KV caching implementation to verify that 
 ## TODOs
 - [x] Explore the repository and create comprehensive docs of the initial codebase under `docs/initial_codebase` with code examples. 
 - [x] Clean the repository of the other boundary predictors we don't need, we only want the whitespace rule
-- [ ] Come up with a rule-based generator to generate sequences in generator.py that writes sequences out to `tokenizer_data/timestamp`. I want to have fixed sequence lengths, uniform probability distribution over x0-255 and p1, p2, and p3 chance of placing a boundary at a given token location. For every sequence of length S, we should keep binary arrays boundaries_1 of the same shape where the entry with 1 indicates a boundary at a given level (in this case 1). Let's keep the tokenizer definition under tokenizer_data
-- [ ] Come up with and implement a simple tokenizer / data processor for our toy examples
-- [ ] Adjust `hourglass.py` to work with our 3-level hierarchy using predefined boundary rules
-- [ ] Come up with and implement visualisation code using matplotlib to visualise the grouping being done for manual inspection
-- [ ] Create a training set of 1000 sequences using `generator.py` (it's okay if we overfit)
-- [ ] Hardcode training and model parameters to overfit to the 1000 sequences with a toy transformer (the goal is to test KV-cache with a pretrained small model) 
-- [ ] Implement greedy decoding batched inference *without KV-cache* keeping track of the token sequence x_seq and b1_seq, b2_seq, and b3_seq to be used during inference
-- [ ] Implement KV-caching while keeping the naive inference code intact to verify the cached values and the final logits are the same
-- [ ] Plan and implement how to profile inference speed with and without KV-caching
-- [ ] Prepare final report
+- [x] Come up with a rule-based generator to generate sequences in generator.py that writes sequences out to `tokenizer_data/timestamp`. I want to have fixed sequence lengths, uniform probability distribution over x0-255 and p1, p2, and p3 chance of placing a boundary at a given token location. For every sequence of length S, we should keep binary arrays boundaries_1 of the same shape where the entry with 1 indicates a boundary at a given level (in this case 1). Let's keep the tokenizer definition under tokenizer_data
+- [x] Come up with and implement a simple tokenizer / data processor for our toy examples
+- [x] Adjust `hourglass.py` to work with our 3-level hierarchy using predefined boundary rules
+- [x] Come up with and implement visualisation code using matplotlib to visualise the grouping being done for manual inspection
+- [x] Create a training set of 1000 sequences using `generator.py` (it's okay if we overfit)
+- [x] Hardcode training and model parameters to overfit to the 1000 sequences with a toy transformer (the goal is to test KV-cache with a pretrained small model) 
+- [x] Implement greedy decoding batched inference *without KV-cache* keeping track of the token sequence x_seq and b1_seq, b2_seq, and b3_seq to be used during inference
+- [x] Implement KV-caching while keeping the naive inference code intact to verify the cached values and the final logits are the same
+- [x] Plan and implement how to profile inference speed with and without KV-caching
+- [x] Prepare final report
+- [ ] Address the following limitations
+    - Cached decoding only supports batch size one.
+    - Tests compare final logits, without directly comparing cached keys and values.
+    - Batched naive decoding continues extending sequences that emitted EOS early.
+    - Runtime scripts construct the default tokenizer instead of loading tokenizer.json.
+    - Custom grouping rules are not stored in tokenizer files or checkpoints.
+    - The cache grows through repeated torch.cat, causing memory reallocations.
+    - The report’s entropy-floor calculation omits the deterministic final EOS contribution.
+-[ ] Migrate from the old transformer-XL implementation to newer flashattention2 transformers for efficiency
 
 
 ## Rules
