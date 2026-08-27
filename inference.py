@@ -8,6 +8,17 @@ prefix every step; the cached path advances the per-stack KV caches.
 
 import torch
 
+from hourglass import HourglassLM
+
+
+def load_trained(path, map_location="cpu"):
+    """Reconstruct a HourglassLM from a train_toy.py checkpoint."""
+    ckpt = torch.load(path, map_location=map_location)
+    model = HourglassLM(n_token=ckpt["vocab_size"], **ckpt["config"])
+    model.load_state_dict(ckpt["state_dict"])
+    model.eval()
+    return model, ckpt
+
 
 @torch.no_grad()
 def greedy_decode_naive(model, tok, prompt, max_new_tokens=64, stop_on_eos=True):
