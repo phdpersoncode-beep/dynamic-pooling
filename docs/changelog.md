@@ -3,6 +3,28 @@
 This log tracks progress on the KV-cache work described in `docs/kv_cache_plan.md`
 and the TODOs in `AGENTS.md`. Newest entries first.
 
+## Limitations follow-up (batching, EOS, persistence)
+
+Addressing the `AGENTS.md` limitations list. The naive `forward` remains the
+correctness oracle; every new path is checked against it on generated data.
+
+Plan / status:
+
+- [x] **Naive batched decode freezes members that emit EOS early** (limitation
+      "Batched naive decoding continues extending sequences that emitted EOS
+      early"). `greedy_decode_naive` now tracks a per-member `finished` flag:
+      once a member emits EOS its tail is frozen to EOS and it is no longer
+      extended, the loop ends when all members finish, and `eos_lengths()`
+      recovers each member's true end. Tests: a scripted-model check of the
+      freeze logic and a **batched == per-sequence** equivalence check on the
+      real model (`tests/test_batched_decode.py`).
+- [ ] **Batched KV-cached decoding** (limitation "Cached decoding only supports
+      batch size one") + preallocated caches.
+- [ ] **Direct cached key/value equivalence tests** (not only final logits).
+- [ ] **Runtime scripts load `tokenizer.json`**; custom group rules persisted
+      via a named-rule registry (tokenizer files + checkpoints).
+- [ ] **Report entropy floor** includes the deterministic final-EOS term.
+
 ## Environment
 
 - `download.pytorch.org` is blocked by the sandbox egress policy, so the CPU
