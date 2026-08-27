@@ -95,11 +95,11 @@ def main():
     args = ap.parse_args()
 
     torch.set_num_threads(args.threads)
-    tok = Tokenizer()
     if os.path.exists(args.ckpt):
-        model, _ = load_trained(args.ckpt)
+        model, tok, _ = load_trained(args.ckpt)
         print(f"loaded {args.ckpt}")
     else:
+        tok = Tokenizer.load_or_default()
         torch.manual_seed(0)
         model = HourglassLM(n_token=len(tok), n_head=4, d_model=64, d_head=16,
                             d_inner=128, layers=(2, 2, 1, 1, 1, 2, 2))

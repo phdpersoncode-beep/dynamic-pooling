@@ -19,7 +19,7 @@ import time
 
 import torch
 
-from tokenizer import Tokenizer, DEFAULT_DEF_PATH
+from tokenizer import Tokenizer
 
 
 def generate(n_seq, seq_len, p1, p2, p3, seed, tokenizer=None):
@@ -92,9 +92,7 @@ def main():
     ap.add_argument("--out-root", type=str, default="tokenizer_data")
     args = ap.parse_args()
 
-    tok = Tokenizer()
-    if not os.path.exists(DEFAULT_DEF_PATH):
-        tok.save(DEFAULT_DEF_PATH)
+    tok = Tokenizer.load_or_default()
 
     tokens, b1, b2, b3 = generate(
         args.n, args.seq_len, args.p1, args.p2, args.p3, args.seed, tokenizer=tok

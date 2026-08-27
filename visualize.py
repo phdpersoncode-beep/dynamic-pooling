@@ -113,7 +113,7 @@ def visualize_grouping(tokens, tokenizer, out_path, title="grouping"):
 
 
 def _demo():
-    tok = Tokenizer()
+    tok = Tokenizer.load_or_default()
     # Hand-built example showing nested boundaries and a trailing incomplete grp.
     syms = ["SOS", "x1", "x2", "b1", "x3", "b2", "x4", "b1", "x5", "b3",
             "x6", "b1", "x7", "EOS"]

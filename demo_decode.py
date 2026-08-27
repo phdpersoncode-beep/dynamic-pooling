@@ -10,7 +10,6 @@ import torch
 import torch.nn.functional as F
 
 from inference import decode_equivalence, greedy_decode_cached, load_trained
-from tokenizer import Tokenizer
 from visualize import visualize_grouping
 
 CKPT = "checkpoints/toy.pt"
@@ -35,8 +34,7 @@ def sample_cached(model, tok, max_new=60, temperature=1.0, seed=0):
 
 
 def main():
-    tok = Tokenizer()
-    model, ckpt = load_trained(CKPT)
+    model, tok, ckpt = load_trained(CKPT)
     print(f"loaded {CKPT} (trained on {ckpt['dataset']}, "
           f"final loss {ckpt['losses'][-1]:.3f})")
 

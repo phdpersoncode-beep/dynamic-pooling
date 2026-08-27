@@ -9,15 +9,24 @@ prefix every step; the cached path advances the per-stack KV caches.
 import torch
 
 from hourglass import HourglassLM
+from tokenizer import Tokenizer
 
 
 def load_trained(path, map_location="cpu"):
-    """Reconstruct a HourglassLM from a train_toy.py checkpoint."""
+    """Reconstruct a HourglassLM and its tokenizer from a train_toy checkpoint.
+
+    Returns (model, tokenizer, checkpoint). The tokenizer (including any custom
+    group rule) is rebuilt from the checkpoint's metadata; older checkpoints
+    without it fall back to the default tokenizer.
+    """
     ckpt = torch.load(path, map_location=map_location)
     model = HourglassLM(n_token=ckpt["vocab_size"], **ckpt["config"])
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
-    return model, ckpt
+    tok = (Tokenizer.from_meta(ckpt["tokenizer"]) if "tokenizer" in ckpt
+           else Tokenizer())
+    assert len(tok) == ckpt["vocab_size"], "tokenizer/vocab size mismatch"
+    return model, tok, ckpt
 
 
 def eos_lengths(tokens, eos_id, sequence_dim=0):

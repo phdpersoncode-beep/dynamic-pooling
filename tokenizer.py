@@ -32,10 +32,43 @@ def build_symbols(n_x=256):
 _LOOKUP = {B1: (1, 0, 0), B2: (1, 1, 0), B3: (1, 1, 1)}
 
 
+# ---- named group-rule registry ------------------------------------------
+# Group rules are arbitrary callables and cannot be JSON-serialized. Rules
+# registered here by name *can* be persisted: the tokenizer/checkpoint stores
+# the name and resolves it back to the callable on load. A raw (unregistered)
+# callable still works at runtime but is saved as ``null`` and will not round
+# trip -- register it if you need persistence.
+_GROUP_RULES = {}
+
+
+def register_group_rule(name):
+    """Decorator registering a ``group_rule`` callable under ``name``."""
+    def deco(fn):
+        _GROUP_RULES[name] = fn
+        fn._group_rule_name = name
+        return fn
+    return deco
+
+
+def get_group_rule(name):
+    if name is None:
+        return None
+    if name not in _GROUP_RULES:
+        raise KeyError(
+            f"unknown group rule {name!r}; register it with @register_group_rule")
+    return _GROUP_RULES[name]
+
+
 class Tokenizer:
     def __init__(self, n_x=256, group_rule=None):
         self.n_x = n_x
-        self.group_rule = group_rule
+        # group_rule may be a callable or the name of a registered rule.
+        if isinstance(group_rule, str):
+            self.group_rule_name = group_rule
+            self.group_rule = get_group_rule(group_rule)
+        else:
+            self.group_rule = group_rule
+            self.group_rule_name = getattr(group_rule, "_group_rule_name", None)
         self.idx2sym = build_symbols(n_x)
         self.sym2idx = {s: i for i, s in enumerate(self.idx2sym)}
         self.sos_id = self.sym2idx[SOS]
@@ -127,17 +160,40 @@ class Tokenizer:
         )
 
     # ---- persistence -----------------------------------------------------
+    def to_meta(self):
+        """Compact tokenizer description for embedding in a checkpoint."""
+        return {"n_x": self.n_x, "group_rule": self.group_rule_name}
+
+    @classmethod
+    def from_meta(cls, meta):
+        return cls(n_x=meta.get("n_x", 256), group_rule=meta.get("group_rule"))
+
     def save(self, path):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"n_x": self.n_x, "symbols": self.idx2sym}, f, indent=2)
+            json.dump({"n_x": self.n_x, "symbols": self.idx2sym,
+                       "group_rule": self.group_rule_name}, f, indent=2)
 
     @classmethod
     def load(cls, path):
         with open(path, "r", encoding="utf-8") as f:
             meta = json.load(f)
-        tok = cls(n_x=meta["n_x"])
+        tok = cls(n_x=meta["n_x"], group_rule=meta.get("group_rule"))
         assert tok.idx2sym == meta["symbols"], "vocabulary mismatch"
+        return tok
+
+    @classmethod
+    def load_or_default(cls, path=None):
+        """Load the tokenizer definition from disk, creating it on first use.
+
+        Runtime scripts use this instead of constructing a bare ``Tokenizer()``
+        so a saved definition (including a persisted group rule) is respected.
+        """
+        path = path or DEFAULT_DEF_PATH
+        if os.path.exists(path):
+            return cls.load(path)
+        tok = cls()
+        tok.save(path)
         return tok
 
 

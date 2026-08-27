@@ -49,7 +49,7 @@ def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
     assert accum > 0, "accum must be positive"
     assert subset is None or subset > 0, "subset must be positive"
     torch.manual_seed(seed)
-    tok = Tokenizer()
+    tok = Tokenizer.load_or_default()
     ds_dir = latest_dataset()
     tokens, b1, b2, b3 = load_dataset(ds_dir)   # N x S
     if subset is not None:
@@ -95,8 +95,8 @@ def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
 
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
     torch.save({"config": CONFIG, "state_dict": model.state_dict(),
-                "vocab_size": len(tok), "dataset": ds_dir,
-                "losses": losses, "subset": subset}, ckpt_path)
+                "vocab_size": len(tok), "tokenizer": tok.to_meta(),
+                "dataset": ds_dir, "losses": losses, "subset": subset}, ckpt_path)
     print(f"saved checkpoint to {ckpt_path}")
 
     plt.figure(figsize=(6, 4))
