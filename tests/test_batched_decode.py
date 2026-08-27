@@ -173,3 +173,58 @@ def test_batched_cached_freezes_prompt_eos_member():
     assert int(lens[1].item()) == 2
     assert torch.all(ct[1:, 1] == tok.eos_id)
     assert torch.equal(ct, nt)
+
+
+def _naive_stack_kv(model, data, c1, c2, c3):
+    """Capture every stack/layer's keys and values from one naive forward pass.
+
+    Hooks each attention's ``qkv_net``; returns {(stack, layer): (k, v)} with
+    k, v shaped S x B x n_head x d_head (S = that stack's dense length).
+    """
+    loc, captured, handles = {}, {}, []
+    for name, stack in model.stacks.items():
+        for i, layer in enumerate(stack):
+            loc[layer.dec_attn.qkv_net] = (name, i)
+
+    def hook(mod, inp, out):
+        _, k, v = torch.chunk(out, 3, dim=-1)
+        S, B = out.size(0), out.size(1)
+        shape = (S, B, model.n_head, model.d_head)
+        captured[loc[mod]] = (k.reshape(shape), v.reshape(shape))
+
+    for mod in loc:
+        handles.append(mod.register_forward_hook(hook))
+    with torch.no_grad():
+        model(data, c1, c2, c3)
+    for h in handles:
+        h.remove()
+    return captured
+
+
+def test_cached_kv_matches_naive_kv():
+    """The cached keys/values themselves (not only the final logits) equal the
+    naive path's per-stack keys/values, per sequence, in the presence of gaps."""
+    m, tok = make_model(seed=3, layers=(2, 2, 1, 1, 1, 2, 2), d=16)
+    data, c1, c2, c3 = _batched_seq(tok, 4, 40, seed=5)
+
+    naive_kv = _naive_stack_kv(m, data, c1, c2, c3)
+
+    state = m.init_state_batched(data.size(1), max_len=data.size(0), device=data.device)
+    with torch.no_grad():
+        for t in range(data.size(0)):
+            m.step_batched(state, data[t], c1[t], c2[t], c3[t])
+
+    saw_gap = False
+    for (name, i), (nk, nv) in naive_kv.items():
+        fill = state['fill'][name]
+        valid = state['valid'][name][:fill]          # fill x B
+        for b in range(data.size(1)):
+            slots = valid[:, b].nonzero().flatten()   # this member's real slots
+            n_real = slots.numel()
+            if n_real < fill:
+                saw_gap = True                        # padding slots exist
+            ck = state['k'][name][i][slots, b]        # n_real x nh x dh
+            cv = state['v'][name][i][slots, b]
+            assert torch.allclose(ck, nk[:n_real, b], atol=1e-5), (name, i, b)
+            assert torch.allclose(cv, nv[:n_real, b], atol=1e-5), (name, i, b)
+    assert saw_gap, "test did not exercise ragged (padded) cache slots"

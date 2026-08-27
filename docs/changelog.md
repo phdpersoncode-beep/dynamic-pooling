@@ -35,7 +35,12 @@ Plan / status:
       **divergent grouping across the batch** (max |Δ| ~7e-7, incl. zero-layer
       stacks), member-independence, batched-cached == batched-naive greedy, and
       batched == single-sequence decode (`tests/test_batched_decode.py`).
-- [ ] **Direct cached key/value equivalence tests** (not only final logits).
+- [x] **Direct cached key/value equivalence tests** (limitation "Tests compare
+      final logits, without directly comparing cached keys and values"). A new
+      test hooks every stack's `qkv_net` during a naive forward and asserts the
+      cached buffers hold the same per-stack keys/values as the naive path, per
+      sequence, matching each member's real (non-padding) slots — and asserts a
+      gap was actually present so the ragged path is exercised.
 - [ ] **Runtime scripts load `tokenizer.json`**; custom group rules persisted
       via a named-rule registry (tokenizer files + checkpoints).
 - [ ] **Report entropy floor** includes the deterministic final-EOS term.
