@@ -16,3 +16,11 @@ and the TODOs in `AGENTS.md`. Newest entries first.
 ## Progress
 
 - [x] Environment set up; torch verified on CPU.
+- [x] Toy tokenizer + causal `group()` (lookup table, cumulative triples),
+      saved under `tokenizer_data/tokenizer.json`. Unit tests in
+      `tests/test_tokenizer.py`.
+- [x] Rule-based `generator.py`: fixed-length `SOS ... EOS` sequences, uniform
+      x0-255, boundary probs p1/p2/p3 (precedence b3>b2>b1). Boundary arrays
+      derived via `group()`. Tests in `tests/test_generator.py`.
+- [x] Generated the 1000-sequence training set (`--seq-len 64`, p1/p2/p3 =
+      0.20/0.08/0.03) under `tokenizer_data/<timestamp>/`.
