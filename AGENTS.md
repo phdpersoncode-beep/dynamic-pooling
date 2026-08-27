@@ -30,8 +30,8 @@ Let's focus on the KV-caching implementation first. You will probably be in a CP
 Make sure to preserve the original non-KV caching implementation to verify that our KV-cache actually matches the forward passes during inference without KV-caching.
 
 ## TODOs
-- [ ] Explore the repository and create comprehensive docs of the initial codebase under `docs/initial_codebase` with code examples. 
-- [ ] Clean the repository of the other boundary predictors we don't need, we only want the whitespace rule
+- [x] Explore the repository and create comprehensive docs of the initial codebase under `docs/initial_codebase` with code examples. 
+- [x] Clean the repository of the other boundary predictors we don't need, we only want the whitespace rule
 - [ ] Come up with a rule-based generator to generate sequences in generator.py that writes sequences out to `tokenizer_data/timestamp`. I want to have fixed sequence lengths, uniform probability distribution over x0-255 and p1, p2, and p3 chance of placing a boundary at a given token location. For every sequence of length S, we should keep binary arrays boundaries_1 of the same shape where the entry with 1 indicates a boundary at a given level (in this case 1). Let's keep the tokenizer definition under tokenizer_data
 - [ ] Come up with and implement a simple tokenizer / data processor for our toy examples
 - [ ] Adjust `hourglass.py` to work with our 3-level hierarchy using predefined boundary rules
