@@ -18,8 +18,23 @@ Plan / status:
       recovers each member's true end. Tests: a scripted-model check of the
       freeze logic and a **batched == per-sequence** equivalence check on the
       real model (`tests/test_batched_decode.py`).
-- [ ] **Batched KV-cached decoding** (limitation "Cached decoding only supports
-      batch size one") + preallocated caches.
+- [x] **Batched KV-cached decoding** (limitation "Cached decoding only supports
+      batch size one") + preallocated caches (limitation "The cache grows through
+      repeated torch.cat"). Every sequence groups at its own rate, so each
+      shortened stack holds a *ragged* set of real groups sharing one
+      preallocated cache per layer: on a step where any member closes a group,
+      all members append a slot — real for those that closed, padding for the
+      rest. Each query attends only to its own real slots (`key_mask`) at its own
+      ordinal distances (`_geom`), so the batched cached attention is identical
+      to the naive dense attention for every member. The B=1 `init_state`/`step`/
+      `cached_forward` are now thin wrappers over the batched path (one
+      implementation), and caches are preallocated (or grown by doubling when the
+      length is unknown) rather than re-`cat`-ed every step. `inference.py` gains
+      `greedy_decode_cached_batched` with the same per-member EOS freezing as the
+      naive path. Validated against the naive `forward` on generated data with
+      **divergent grouping across the batch** (max |Δ| ~7e-7, incl. zero-layer
+      stacks), member-independence, batched-cached == batched-naive greedy, and
+      batched == single-sequence decode (`tests/test_batched_decode.py`).
 - [ ] **Direct cached key/value equivalence tests** (not only final logits).
 - [ ] **Runtime scripts load `tokenizer.json`**; custom group rules persisted
       via a named-rule registry (tokenizer files + checkpoints).

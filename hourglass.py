@@ -224,6 +224,52 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
         output = self.layer_norm(w_new + attn_out)
         return output, w_k, w_v
 
+    def step_batched(self, x_in, k_buf, v_buf, fill, remb, key_mask,
+                     r_w_bias, r_r_bias):
+        """Batched incremental attention with preallocated, ragged caches.
+
+        x_in:     1 x B x C new position (query = key = value source).
+        k_buf/v_buf: cap x B x n_head x d_head preallocated caches; the new
+                  key/value are written in place at row ``fill``.
+        remb:     L x B x C positional embeddings, already gathered at each
+                  sequence's own relative distance (L = fill + 1).
+        key_mask: B x L bool, True where a slot must NOT be attended (a padding
+                  slot that is not a real group for that sequence).
+
+        One query per sequence attends to that sequence's valid keys at their
+        per-sequence ordinal distances, reproducing the naive relative attention
+        independently for every batch member. Returns output 1 x B x C.
+        """
+        assert not self.pre_lnorm
+        B = x_in.size(1)
+        w_q, w_k, w_v = torch.chunk(self.qkv_net(x_in), 3, dim=-1)
+        w_q = w_q.view(1, B, self.n_head, self.d_head)
+        k_buf[fill] = w_k.reshape(B, self.n_head, self.d_head)
+        v_buf[fill] = w_v.reshape(B, self.n_head, self.d_head)
+
+        L = fill + 1
+        k = k_buf[:L]                                    # L x B x nh x dh (view)
+        v = v_buf[:L]
+        r_head_k = self.r_net(remb).view(L, B, self.n_head, self.d_head)
+
+        rw_q = w_q + r_w_bias
+        AC = torch.einsum('ibnd,jbnd->bnij', rw_q, k)    # B x nh x 1 x L
+        rr_q = w_q + r_r_bias
+        BD = torch.einsum('ibnd,jbnd->bnij', rr_q, r_head_k)
+        attn_score = add_and_scale(AC, BD, self.scale)
+        attn_score = attn_score.masked_fill(key_mask[:, None, None, :],
+                                            -float('inf'))
+
+        attn_prob = F.softmax(attn_score, dim=3)
+        attn_prob = self.dropatt(attn_prob)
+
+        attn_vec = torch.einsum('bnij,jbnd->ibnd', attn_prob, v)
+        attn_vec = attn_vec.contiguous().view(1, B, self.n_head * self.d_head)
+
+        attn_out = self.o_net(attn_vec)
+        attn_out = self.drop(attn_out)
+        return self.layer_norm(x_in + attn_out)
+
 
 class RelPartialLearnableDecoderLayer(nn.Module):
     def __init__(
@@ -262,6 +308,12 @@ class RelPartialLearnableDecoderLayer(nn.Module):
             x_new, r, r_w_bias, r_r_bias, cache_k, cache_v)
         output = self.pos_ff(output)
         return output, k, v
+
+    def step_batched(self, x_in, k_buf, v_buf, fill, remb, key_mask,
+                     r_w_bias, r_r_bias):
+        output = self.dec_attn.step_batched(
+            x_in, k_buf, v_buf, fill, remb, key_mask, r_w_bias, r_r_bias)
+        return self.pos_ff(output)
 
 
 class MemTransformerLM(nn.Module):
@@ -539,106 +591,192 @@ class HourglassLM(nn.Module):
             return logit, loss
         return logit
 
-    # ---- incremental KV-cached path (batch size 1) ---------------------
-    def _stack_step(self, layers, x_new, caches):
-        if not layers:
-            return x_new, caches
-        L = 1 if caches[0] is None else caches[0][0].size(0) + 1
-        pos_seq = torch.arange(L - 1, -1, -1.0,
-                               device=x_new.device, dtype=x_new.dtype)
-        r = self.pos_emb(pos_seq)
-        out = x_new
-        new_caches = []
-        for i, layer in enumerate(layers):
-            ck, cv = (None, None) if caches[i] is None else caches[i]
-            out, k, v = layer.step(out, r, self.r_w_bias, self.r_r_bias, ck, cv)
-            new_caches.append((k, v))
-        return out, new_caches
+    # ---- incremental KV-cached path (batched) --------------------------
+    #
+    # Every sequence in the batch groups at its own rate, so each shortened
+    # stack holds a *ragged* set of real group representations. They share one
+    # preallocated cache per layer: on a step where at least one sequence closes
+    # a group, all sequences append a slot, real for those that closed and a
+    # padding slot for the rest. Each query attends only to its own real slots
+    # (via `key_mask`) at its own ordinal distances (via `remb`), which makes the
+    # cached attention identical to the naive dense attention for every member.
 
-    def init_state(self):
+    def _ensure_cap(self, state, name, need):
+        """Grow a stack's preallocated caches (doubling) to hold `need` slots."""
+        cur = state['valid'][name].size(0)
+        if need <= cur:
+            return
+        newcap = max(need, cur * 2)
+        bsz, dev = state['bsz'], state['valid'][name].device
+        for store in ('k', 'v'):
+            for i, old in enumerate(state[store][name]):
+                buf = torch.zeros(newcap, bsz, self.n_head, self.d_head, device=dev)
+                buf[:cur] = old
+                state[store][name][i] = buf
+        ov = state['valid'][name]
+        nv = torch.zeros(newcap, bsz, dtype=torch.bool, device=dev)
+        nv[:cur] = ov
+        state['valid'][name] = nv
+
+    def _geom(self, valid_new):
+        """Per-sequence relative geometry for a batched step.
+
+        valid_new: L x B bool (which of the L slots are real for each sequence,
+        including the just-appended slot). Returns positional embeddings gathered
+        at each sequence's ordinal distance (L x B x C) and the attention key
+        mask (B x L, True = do not attend).
+        """
+        L = valid_new.size(0)
+        ordv = valid_new.long().cumsum(0)                 # L x B: #valid up to slot
+        dist = (ordv[-1].unsqueeze(0) - ordv).clamp_(0, L - 1)   # L x B
+        pos = torch.arange(L, device=valid_new.device, dtype=torch.float)
+        table = self.pos_emb(pos).squeeze(1)              # L x C  (distance -> emb)
+        remb = table[dist]                                # L x B x C
+        key_mask = ~valid_new.transpose(0, 1).contiguous()  # B x L
+        key_mask[:, -1] = False   # a query always sees its own new slot (no NaN)
+        return remb, key_mask
+
+    def _stack_step_batched(self, state, name, x_new, active):
+        """Advance one stack by a single (batched) position.
+
+        active: B bool -- which sequences get a *real* new slot; the rest append
+        a padding slot. A zero-layer stack is the identity (no cache)."""
+        layers = self.stacks[name]
+        if len(layers) == 0:
+            return x_new
+        fill = state['fill'][name]
+        self._ensure_cap(state, name, fill + 1)
+        state['valid'][name][fill] = active
+        remb, key_mask = self._geom(state['valid'][name][:fill + 1])
+        out = x_new
+        for i, layer in enumerate(layers):
+            out = layer.step_batched(
+                out, state['k'][name][i], state['v'][name][i], fill, remb, key_mask,
+                self.r_w_bias, self.r_r_bias)
+        state['fill'][name] = fill + 1
+        return out
+
+    def init_state_batched(self, bsz, max_len=None, device=None):
+        """Fresh batched cache state. Pass `max_len` to preallocate exactly (no
+        reallocation); otherwise buffers start small and grow by doubling."""
+        dev = device or self.r_w_bias.device
+        cap = (max_len + 1) if max_len is not None else 8
+        zc = lambda: torch.zeros(cap, bsz, self.n_head, self.d_head, device=dev)
+        zl = lambda: torch.zeros(bsz, dtype=torch.long, device=dev)
         state = {
-            'caches': {n: [None] * len(self.stacks[n]) for n in STACK_NAMES},
-            'l1_sum': None, 'l1_cnt': 0,
-            'l2_sum': None, 'l2_cnt': 0,
-            'l3_sum': None, 'l3_cnt': 0,
+            'bsz': bsz,
+            'k': {}, 'v': {}, 'valid': {}, 'fill': {},
+            'l1_sum': None, 'l1_cnt': zl(),
+            'l2_sum': None, 'l2_cnt': zl(),
+            'l3_sum': None, 'l3_cnt': zl(),
             'h3_last': None, 'e2_last': None, 'f1_last': None,
         }
-        c = state['caches']
-        # Prime the pooled stacks with their processed null group (index 0).
-        h1_null, c['l1_down'] = self._stack_step(
-            self.stacks['l1_down'], self.down_ln1(self.null_1), c['l1_down'])
-        h2_null, c['l2_down'] = self._stack_step(
-            self.stacks['l2_down'], self.down_ln2(self.null_2), c['l2_down'])
-        h3_null, c['l3'] = self._stack_step(
-            self.stacks['l3'], self.down_ln3(self.null_3), c['l3'])
-        # Level-2/3 pooling accumulators begin with the processed null.
-        state['l2_sum'], state['l2_cnt'] = h1_null.clone(), 1
-        state['l3_sum'], state['l3_cnt'] = h2_null.clone(), 1
+        for name in STACK_NAMES:
+            nl = len(self.stacks[name])
+            state['k'][name] = [zc() for _ in range(nl)]
+            state['v'][name] = [zc() for _ in range(nl)]
+            state['valid'][name] = torch.zeros(cap, bsz, dtype=torch.bool, device=dev)
+            state['fill'][name] = 0
+
+        active = torch.ones(bsz, dtype=torch.bool, device=dev)
+        rep = lambda p: p.expand(1, bsz, self.d_model)   # 1x1xC param -> 1xBxC
+        # Prime the pooled + up stacks with their processed null group (slot 0).
+        h1_null = self._stack_step_batched(state, 'l1_down', self.down_ln1(rep(self.null_1)), active)
+        h2_null = self._stack_step_batched(state, 'l2_down', self.down_ln2(rep(self.null_2)), active)
+        h3_null = self._stack_step_batched(state, 'l3', self.down_ln3(rep(self.null_3)), active)
+        ones = torch.ones(bsz, dtype=torch.long, device=dev)
+        state['l2_sum'], state['l2_cnt'] = h1_null.clone(), ones.clone()
+        state['l3_sum'], state['l3_cnt'] = h2_null.clone(), ones.clone()
         state['h3_last'] = h3_null
-        # Prime the up-path stacks with the null chain.
-        e2_null, c['l2_up'] = self._stack_step(
-            self.stacks['l2_up'], state['h3_last'] + h2_null, c['l2_up'])
+        e2_null = self._stack_step_batched(state, 'l2_up', state['h3_last'] + h2_null, active)
         state['e2_last'] = e2_null
-        f1_null, c['l1_up'] = self._stack_step(
-            self.stacks['l1_up'], e2_null + h1_null, c['l1_up'])
+        f1_null = self._stack_step_batched(state, 'l1_up', e2_null + h1_null, active)
         state['f1_last'] = f1_null
         return state
 
-    def step(self, state, token_id, c1, c2, c3):
-        """Advance one full-resolution token. c1/c2/c3 are its close events
-        (cumulative). Returns logits (1 x 1 x V)."""
-        c = state['caches']
+    def step_batched(self, state, tokens, c1, c2, c3, active=None):
+        """Advance one full-resolution token for the whole batch.
+
+        tokens, c1, c2, c3: B (token ids and their cumulative close events).
+        active: B bool -- sequences still decoding (finished ones are frozen and
+        contribute nothing). Returns logits 1 x B x V."""
+        B = state['bsz']
         dev = self.r_w_bias.device
-        tok = torch.tensor([[int(token_id)]], device=dev)
-        x = self.drop(self.word_emb(tok))
+        if active is None:
+            active = torch.ones(B, dtype=torch.bool, device=dev)
+        am = active.view(1, B, 1).float()
+        m1 = c1.bool() & active
+        m2 = c2.bool() & active
+        m3 = c3.bool() & active
 
-        a_t, c['pre'] = self._stack_step(self.stacks['pre'], x, c['pre'])
+        x = self.drop(self.word_emb(tokens.view(1, B)))
+        a_t = self._stack_step_batched(state, 'pre', x, active)
         res0 = a_t
-        state['l1_sum'] = a_t.clone() if state['l1_sum'] is None else state['l1_sum'] + a_t
-        state['l1_cnt'] += 1
+        add = a_t * am
+        state['l1_sum'] = add if state['l1_sum'] is None else state['l1_sum'] + add
+        state['l1_cnt'] = state['l1_cnt'] + active.long()
 
-        if c1:
-            g1 = self.down_ln1(state['l1_sum'] / state['l1_cnt'])
-            state['l1_sum'], state['l1_cnt'] = None, 0
-            h1_new, c['l1_down'] = self._stack_step(self.stacks['l1_down'], g1, c['l1_down'])
-            res1 = h1_new
-            state['l2_sum'] = h1_new.clone() if state['l2_sum'] is None else state['l2_sum'] + h1_new
-            state['l2_cnt'] += 1
+        if bool(m1.any()):
+            cnt = state['l1_cnt'].clamp(min=1).view(1, B, 1).float()
+            g1 = self.down_ln1(state['l1_sum'] / cnt)
+            r1 = m1.view(1, B, 1)
+            state['l1_sum'] = torch.where(r1, torch.zeros_like(state['l1_sum']), state['l1_sum'])
+            state['l1_cnt'] = torch.where(m1, torch.zeros_like(state['l1_cnt']), state['l1_cnt'])
+            h1 = self._stack_step_batched(state, 'l1_down', g1, m1)
+            res1 = h1
+            add1 = h1 * r1.float()
+            state['l2_sum'] = state['l2_sum'] + add1
+            state['l2_cnt'] = state['l2_cnt'] + m1.long()
 
-            if c2:
-                g2 = self.down_ln2(state['l2_sum'] / state['l2_cnt'])
-                state['l2_sum'], state['l2_cnt'] = None, 0
-                h2_new, c['l2_down'] = self._stack_step(self.stacks['l2_down'], g2, c['l2_down'])
-                res2 = h2_new
-                state['l3_sum'] = h2_new.clone() if state['l3_sum'] is None else state['l3_sum'] + h2_new
-                state['l3_cnt'] += 1
+            if bool(m2.any()):
+                cnt2 = state['l2_cnt'].clamp(min=1).view(1, B, 1).float()
+                g2 = self.down_ln2(state['l2_sum'] / cnt2)
+                r2 = m2.view(1, B, 1)
+                state['l2_sum'] = torch.where(r2, torch.zeros_like(state['l2_sum']), state['l2_sum'])
+                state['l2_cnt'] = torch.where(m2, torch.zeros_like(state['l2_cnt']), state['l2_cnt'])
+                h2 = self._stack_step_batched(state, 'l2_down', g2, m2)
+                res2 = h2
+                add2 = h2 * r2.float()
+                state['l3_sum'] = state['l3_sum'] + add2
+                state['l3_cnt'] = state['l3_cnt'] + m2.long()
 
-                if c3:
-                    g3 = self.down_ln3(state['l3_sum'] / state['l3_cnt'])
-                    state['l3_sum'], state['l3_cnt'] = None, 0
-                    h3_new, c['l3'] = self._stack_step(self.stacks['l3'], g3, c['l3'])
-                    state['h3_last'] = h3_new
+                if bool(m3.any()):
+                    cnt3 = state['l3_cnt'].clamp(min=1).view(1, B, 1).float()
+                    g3 = self.down_ln3(state['l3_sum'] / cnt3)
+                    r3 = m3.view(1, B, 1)
+                    state['l3_sum'] = torch.where(r3, torch.zeros_like(state['l3_sum']), state['l3_sum'])
+                    state['l3_cnt'] = torch.where(m3, torch.zeros_like(state['l3_cnt']), state['l3_cnt'])
+                    h3 = self._stack_step_batched(state, 'l3', g3, m3)
+                    state['h3_last'] = torch.where(r3, h3, state['h3_last'])
 
-                e2_new, c['l2_up'] = self._stack_step(
-                    self.stacks['l2_up'], state['h3_last'] + res2, c['l2_up'])
-                state['e2_last'] = e2_new
+                e2 = self._stack_step_batched(state, 'l2_up', state['h3_last'] + res2, m2)
+                state['e2_last'] = torch.where(r2, e2, state['e2_last'])
 
-            f1_new, c['l1_up'] = self._stack_step(
-                self.stacks['l1_up'], state['e2_last'] + res1, c['l1_up'])
-            state['f1_last'] = f1_new
+            f1 = self._stack_step_batched(state, 'l1_up', state['e2_last'] + res1, m1)
+            state['f1_last'] = torch.where(r1, f1, state['f1_last'])
 
-        g0, c['post'] = self._stack_step(
-            self.stacks['post'], state['f1_last'] + res0, c['post'])
+        g0 = self._stack_step_batched(state, 'post', state['f1_last'] + res0, active)
         return self.final_cast(g0)
 
-    def cached_forward(self, data, c1, c2, c3):
-        """Run the cached path over a full given sequence (T x 1). Returns
-        logits T x 1 x V. Used to check equivalence with `forward`."""
-        assert data.size(1) == 1, "cached path is batch size 1"
-        state = self.init_state()
-        logits = []
-        for t in range(data.size(0)):
-            lg = self.step(state, data[t, 0].item(),
-                           int(c1[t, 0]), int(c2[t, 0]), int(c3[t, 0]))
-            logits.append(lg)
+    def cached_forward_batched(self, data, c1, c2, c3):
+        """Run the batched cached path over a full T x B sequence. Returns logits
+        T x B x V. Used to check equivalence with the naive `forward`."""
+        T, B = data.size(0), data.size(1)
+        state = self.init_state_batched(B, max_len=T, device=data.device)
+        logits = [self.step_batched(state, data[t], c1[t], c2[t], c3[t])
+                  for t in range(T)]
         return torch.cat(logits, dim=0)
+
+    # ---- batch-size-1 convenience wrappers (used by the streaming decoders) --
+    def init_state(self):
+        return self.init_state_batched(1)
+
+    def step(self, state, token_id, c1, c2, c3):
+        """Advance one token for a batch-size-1 state. Returns logits 1 x 1 x V."""
+        dev = self.r_w_bias.device
+        t = lambda v: torch.tensor([int(v)], device=dev)
+        return self.step_batched(state, t(token_id), t(c1), t(c2), t(c3))
+
+    def cached_forward(self, data, c1, c2, c3):
+        """Batched cached path restricted to T x 1 (kept for existing callers)."""
+        return self.cached_forward_batched(data, c1, c2, c3)

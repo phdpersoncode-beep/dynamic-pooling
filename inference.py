@@ -103,6 +103,57 @@ def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True
     return tokens, b1, b2, b3
 
 
+@torch.no_grad()
+def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
+                                stop_on_eos=True):
+    """Batched KV-cached greedy decoding.
+
+    prompt: T0 x B (or 1D) LongTensor of equal-length prompts. Each member stops
+    independently: once it emits EOS its tail is frozen to EOS and it is dropped
+    from further cache updates (``active`` mask), while the others keep decoding.
+    Returns tokens (T x B) and b1/b2/b3 (T x B); use ``eos_lengths`` for the ends.
+    """
+    model.eval()
+    if prompt.dim() == 1:
+        prompt = prompt.view(-1, 1)
+    T0, B = prompt.size()
+    dev = prompt.device
+    state = model.init_state_batched(B, max_len=T0 + max_new_tokens, device=dev)
+    gstates = [tok.init_group_state() for _ in range(B)]
+
+    def closes(row, active):
+        c = torch.zeros(3, B, dtype=torch.long, device=dev)
+        ids = row.tolist()
+        for b in range(B):
+            if active is None or bool(active[b]):
+                c[0, b], c[1, b], c[2, b] = tok.group(ids[b], gstates[b])
+        return c[0], c[1], c[2]
+
+    finished = ((prompt == tok.eos_id).any(dim=0) if stop_on_eos
+                else torch.zeros(B, dtype=torch.bool, device=dev))
+    logit = None
+    for t in range(T0):                              # consume the prompt
+        active = (~finished) if stop_on_eos else None
+        c1, c2, c3 = closes(prompt[t], active)
+        logit = model.step_batched(state, prompt[t], c1, c2, c3, active=active)
+
+    tokens = prompt.clone()
+    for _ in range(max_new_tokens):
+        if stop_on_eos and bool(finished.all()):
+            break
+        nxt = logit[-1].argmax(dim=-1)               # B
+        if stop_on_eos:
+            nxt = torch.where(finished, torch.full_like(nxt, tok.eos_id), nxt)
+            finished = finished | (nxt == tok.eos_id)
+        tokens = torch.cat([tokens, nxt[None, :]], dim=0)
+        active = (~finished) if stop_on_eos else None
+        c1, c2, c3 = closes(nxt, active)
+        logit = model.step_batched(state, nxt, c1, c2, c3, active=active)
+
+    b1, b2, b3 = tok.group_sequence(tokens, sequence_dim=0)
+    return tokens, b1, b2, b3
+
+
 def format_decode(tok, tokens, b1, b2, b3):
     """Human-readable view of a decoded sequence (1D tensors)."""
     syms = tok.decode(tokens)
