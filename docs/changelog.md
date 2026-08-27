@@ -44,8 +44,22 @@ and the TODOs in `AGENTS.md`. Newest entries first.
     - `greedy_decode_cached` (batch 1, KV cache);
     - `decode_equivalence` proves both emit identical tokens and per-step
       logits. Tests in `tests/test_inference.py` pass.
-- [~] Training (`train_toy.py`): small model (d_model 64, layers 2/2/1/1/1/2/2,
-      ~448k params), batch size 1 with grad accumulation, running to overfit
-      the 1000-sequence set. (Sequences are random by construction, so loss
-      floors well above zero; the aim is a genuinely trained small model for
-      the cache demo.)
+- [x] Training (`train_toy.py`): small model (d_model 64, layers 2/2/1/1/1/2/2,
+      ~448k params), batch size 1 + grad accumulation. On the 1000-sequence set
+      loss reaches the data entropy floor (~4.71 nats) by epoch ~2 and dips to
+      4.58 via memorization (`docs/figures/train_loss.png`). A 32-sequence run
+      overfits to 0.09 nats, demonstrating the loop can memorize
+      (`docs/figures/overfit32_loss.png`). Checkpoint: `checkpoints/toy.pt`.
+- [x] Decode demo (`demo_decode.py`): greedy (collapses to modal token `b1`) and
+      temperature-sampled (all three levels) decoding from the trained model,
+      both matching the naive path; figure `docs/figures/generated_grouping.png`.
+- [x] Speed profiling (`benchmark.py`): naive vs KV-cached greedy decoding.
+      Cache speedup grows with length (1.8x @16 -> 3.0x @256 tokens), naive
+      super-linear vs cached near-linear. Figures `benchmark_time.png`,
+      `benchmark_speedup.png`, data `benchmark_results.json`.
+- [x] Full test suite (`tests/`, 15 tests) passes.
+- [x] Final report: `docs/report.md`.
+
+All `AGENTS.md` KV-cache TODOs are addressed. The original non-cached path is
+preserved as the correctness reference; batched asynchronous grouping (B>1 exact
+pooling) is left as future work per the plan.

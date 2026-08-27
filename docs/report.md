@@ -111,11 +111,56 @@ All checks run with dropout disabled and deterministic `group()` boundaries.
 
 ## 7. Training
 
-_(filled in after training)_
+`train_toy.py` fits a small model (d_model 64, layers `2/2/1/1/1/2/2`, ~448k
+params) at batch size 1 with gradient accumulation.
+
+The generated sequences are random by construction, so the next-token
+distribution has entropy
+
+```
+H = -(256 * (0.69/256) log(0.69/256) + 0.20 log 0.20 + 0.08 log 0.08
+      + 0.03 log 0.03) ~= 4.71 nats
+```
+
+On the full 1000-sequence set the model reaches this floor within ~2 epochs
+(learning the boundary-token marginal) and then dips slightly below it via
+memorization, ending at **4.58 nats** after 20 epochs
+(`docs/figures/train_loss.png`). This is the expected behavior; the checkpoint
+`checkpoints/toy.pt` is simply a realistic set of weights for the cache demo.
+
+To show the training loop *can* overfit when the data is memorizable, a run on
+32 sequences drives loss from 5.55 down to **0.09 nats**, far below the entropy
+floor (`docs/figures/overfit32_loss.png`).
+
+`demo_decode.py` loads the checkpoint, decodes, and confirms cached == naive.
+Greedy decoding collapses to the modal token `b1` (marginal 0.20 exceeds any
+single x-token at 0.69/256), which is the correct greedy behavior on this
+near-uniform distribution; a temperature-sampled sequence exercises all three
+levels (`docs/figures/generated_grouping.png`) and cached still matches naive.
 
 ## 8. Speed profiling
 
-_(filled in after benchmarking)_
+`benchmark.py` times greedy decoding of a fixed number of tokens with the naive
+and cached paths (single thread, EOS disabled). Generating T tokens costs
+`O(T^3)` attention work for the naive path (a full `O(L^2)` recompute at each
+length L) versus `O(T^2)` for the cache.
+
+| tokens | naive (s) | cached (s) | speedup |
+| ---: | ---: | ---: | ---: |
+| 16  | 0.176 | 0.097 | 1.81x |
+| 32  | 0.364 | 0.198 | 1.84x |
+| 64  | 0.749 | 0.342 | 2.19x |
+| 96  | 1.130 | 0.519 | 2.18x |
+| 128 | 1.610 | 0.695 | 2.32x |
+| 192 | 2.687 | 1.045 | 2.57x |
+| 256 | 4.520 | 1.497 | 3.02x |
+
+The naive curve is visibly super-linear while the cached curve is near-linear
+(`docs/figures/benchmark_time.png`, `benchmark_speedup.png`); the speedup grows
+with length (3.0x at 256 tokens). The absolute gap is moderated here by the tiny
+model on CPU — per-step Python overhead is a large fraction of the work — but the
+scaling separation is the point, and it widens with sequence length and model
+size.
 
 ## 9. Notes and limitations
 
