@@ -19,12 +19,14 @@ import matplotlib.pyplot as plt
 import torch
 
 from hourglass import HourglassLM
-from inference import greedy_decode_cached, greedy_decode_naive, load_trained
+from inference import (greedy_decode_cached, greedy_decode_cached_batched,
+                       greedy_decode_naive, load_trained)
 from tokenizer import Tokenizer
 
 FIG_TIME = "docs/figures/benchmark_time.png"
 FIG_SPEEDUP = "docs/figures/benchmark_speedup.png"
 RESULTS = "docs/figures/benchmark_results.json"
+BATCHED_RESULTS = "docs/figures/benchmark_batched_results.json"
 
 
 def _time_it(fn, repeats=1):
@@ -50,6 +52,24 @@ def run(model, tok, lengths, repeats=2):
         rows.append({"length": T, "naive_s": t_naive, "cached_s": t_cached,
                      "speedup": t_naive / t_cached})
         print(f"len {T:4d}: naive {t_naive:7.3f}s  cached {t_cached:7.3f}s  "
+              f"speedup {t_naive/t_cached:5.2f}x")
+    return rows
+
+
+def run_batched(model, tok, lengths, batch, repeats=2):
+    """Time naive vs KV-cached greedy decoding for a batch of `batch` sequences."""
+    prompt = torch.full((1, batch), tok.sos_id)
+    rows = []
+    for T in lengths:
+        t_naive = _time_it(
+            lambda: greedy_decode_naive(model, tok, prompt, T, stop_on_eos=False),
+            repeats)
+        t_cached = _time_it(
+            lambda: greedy_decode_cached_batched(model, tok, prompt, T, stop_on_eos=False),
+            repeats)
+        rows.append({"length": T, "batch": batch, "naive_s": t_naive,
+                     "cached_s": t_cached, "speedup": t_naive / t_cached})
+        print(f"B={batch} len {T:4d}: naive {t_naive:7.3f}s  cached {t_cached:7.3f}s  "
               f"speedup {t_naive/t_cached:5.2f}x")
     return rows
 
@@ -92,6 +112,8 @@ def main():
                     default=[16, 32, 64, 96, 128, 192, 256])
     ap.add_argument("--repeats", type=int, default=2)
     ap.add_argument("--threads", type=int, default=1)
+    ap.add_argument("--batch", type=int, default=1,
+                    help="if > 1, also benchmark batched decoding at this size")
     args = ap.parse_args()
 
     torch.set_num_threads(args.threads)
@@ -111,6 +133,13 @@ def main():
     with open(RESULTS, "w", encoding="utf-8") as f:
         json.dump(rows, f, indent=2)
     print(f"saved {FIG_TIME}, {FIG_SPEEDUP}, {RESULTS}")
+
+    if args.batch > 1:
+        print(f"\nbatched decoding (B={args.batch}):")
+        brows = run_batched(model, tok, args.lengths, args.batch, args.repeats)
+        with open(BATCHED_RESULTS, "w", encoding="utf-8") as f:
+            json.dump(brows, f, indent=2)
+        print(f"saved {BATCHED_RESULTS}")
 
 
 if __name__ == "__main__":

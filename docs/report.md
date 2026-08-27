@@ -80,8 +80,8 @@ pooled tensor (`cumsum` of the finer event).
 **Naive** (`forward`) recomputes the entire prefix every step; it is the
 reference and is used for training.
 
-**Cached** (`step` / `cached_forward`, batch size 1) keeps a KV cache per layer
-per stack and advances each stack at its own rate:
+**Cached** (`step_batched` / `cached_forward_batched`, any batch size) keeps a
+KV cache per layer per stack and advances each stack at its own rate:
 
 - token stacks advance every token;
 - level-1 stacks every level-1/2/3 event;
@@ -91,9 +91,24 @@ per stack and advances each stack at its own rate:
 Group means are maintained incrementally; when `group()` closes a group, the new
 compressed representation is pushed through the next stack and becomes visible at
 that position, mirroring the naive causal pooling exactly. The incremental
-relative-attention step computes a single query against all cached keys using
-positional distances `L-1..0`, which reproduces the last row of the naive
+relative-attention step computes a single query against the cached keys using
+positional distances `L-1..0`, reproducing the last row of the naive
 `_rel_shift` attention.
+
+**Batching.** Different sequences group at different times, so each shortened
+stack holds a *ragged* set of real groups across the batch. They share one
+preallocated cache per layer: on any step where at least one member closes a
+group, all members append a slot — real for those that closed, padding for the
+rest. Each query attends only to its own real slots (a per-sequence key mask) at
+its own ordinal distances (a per-sequence relative-position gather), so the
+batched cached attention is identical to the naive dense attention for every
+member. Caches are preallocated to the known decode length (or grown by doubling
+when streaming), avoiding a per-step `torch.cat`. The batch-size-1 `step` /
+`cached_forward` are thin wrappers over the batched path.
+
+**EOS.** Both the naive and cached batched decoders stop each member
+independently: once a member emits `EOS` its tail is frozen and it is dropped
+from further cache updates (an `active` mask) while the others keep decoding.
 
 ## 6. Correctness
 
@@ -108,6 +123,15 @@ All checks run with dropout disabled and deterministic `group()` boundaries.
   identical token sequences and identical per-step logits
   (`tests/test_inference.py`), and both track `x_seq` and `b1/b2/b3_seq` via
   `group()`.
+- **Batched cache == naive** — `cached_forward_batched` matches the naive
+  `forward` for `B>1` with divergent grouping across the batch (max |Δ| ~7e-7),
+  including zero-layer stacks, and each member is independent of its batch-mates
+  (`tests/test_batched_decode.py`).
+- **Cached keys/values == naive** — the cached K/V *buffers themselves* (not
+  only the final logits) match the naive path's per-stack keys and values, per
+  member, aligned on each member's real (non-padding) slots.
+- **EOS handling** — the naive and cached batched decoders match per-sequence
+  decoding and freeze members that emit `EOS` early instead of extending them.
 
 <!-- TRAINING AND BENCHMARK RESULTS FILLED IN BELOW -->
 
@@ -116,23 +140,33 @@ All checks run with dropout disabled and deterministic `group()` boundaries.
 `train_toy.py` fits a small model (d_model 64, layers `2/2/1/1/1/2/2`, ~448k
 params) at batch size 1 with gradient accumulation.
 
-The generated sequences are random by construction, so the next-token
-distribution has entropy
+The generated sequences are random by construction, so each **body** token is
+drawn from a fixed distribution with entropy
 
 ```
-H = -(256 * (0.69/256) log(0.69/256) + 0.20 log 0.20 + 0.08 log 0.08
-      + 0.03 log 0.03) ~= 4.71 nats
+H_body = -(256 * (0.69/256) log(0.69/256) + 0.20 log 0.20 + 0.08 log 0.08
+           + 0.03 log 0.03) ~= 4.711 nats
 ```
 
-On the full 1000-sequence set the model reaches this floor within ~2 epochs
-(learning the boundary-token marginal) and then dips slightly below it via
-memorization, ending at **4.58 nats** after 20 epochs
-(`docs/figures/train_loss.png`). This is the expected behavior; the checkpoint
-`checkpoints/toy.pt` is simply a realistic set of weights for the cache demo.
+The reported loss, however, is the mean over all 63 next-token targets of a
+length-64 sequence, and the **final** target is always `EOS` at a fixed
+position — a deterministic event contributing ~0 nats. The mean next-token loss
+floor is therefore
+
+```
+floor = (62 * H_body + 1 * 0) / 63 = (62/63) * 4.711 ~= 4.637 nats
+```
+
+not `H_body` itself. On the full 1000-sequence set the model reaches this floor
+within ~2 epochs (learning the boundary-token marginal and the terminal `EOS`)
+and then dips slightly below it via memorization, ending at **4.583 nats** after
+20 epochs (`docs/figures/train_loss.png`) — below the 4.637 floor, as expected
+for a memorizing model. The checkpoint `checkpoints/toy.pt` is simply a
+realistic set of weights for the cache demo.
 
 To show the training loop *can* overfit when the data is memorizable, a run on
-32 sequences drives loss from 5.55 down to **0.09 nats**, far below the entropy
-floor (`docs/figures/overfit32_loss.png`).
+32 sequences drives loss from 5.56 down to **0.09 nats**, far below the floor
+(`docs/figures/overfit32_loss.png`).
 
 `demo_decode.py` loads the checkpoint, decodes, and confirms cached == naive.
 Greedy decoding collapses to the modal token `b1` (marginal 0.20 exceeds any
@@ -149,26 +183,46 @@ length L) versus `O(T^2)` for the cache.
 
 | tokens | naive (s) | cached (s) | speedup |
 | ---: | ---: | ---: | ---: |
-| 16  | 0.176 | 0.097 | 1.81x |
-| 32  | 0.364 | 0.198 | 1.84x |
-| 64  | 0.749 | 0.342 | 2.19x |
-| 96  | 1.130 | 0.519 | 2.18x |
-| 128 | 1.610 | 0.695 | 2.32x |
-| 192 | 2.687 | 1.045 | 2.57x |
-| 256 | 4.520 | 1.497 | 3.02x |
+| 16  | 0.231 | 0.153 | 1.51x |
+| 32  | 0.486 | 0.309 | 1.57x |
+| 64  | 0.935 | 0.537 | 1.74x |
+| 96  | 1.484 | 0.690 | 2.15x |
+| 128 | 1.890 | 1.104 | 1.71x |
+| 192 | 3.486 | 1.566 | 2.23x |
+| 256 | 5.528 | 2.070 | 2.67x |
 
 The naive curve is visibly super-linear while the cached curve is near-linear
 (`docs/figures/benchmark_time.png`, `benchmark_speedup.png`); the speedup grows
-with length (3.0x at 256 tokens). The absolute gap is moderated here by the tiny
-model on CPU — per-step Python overhead is a large fraction of the work — but the
-scaling separation is the point, and it widens with sequence length and model
-size.
+with length (~2.7x at 256 tokens; the 128 row is timing noise). The absolute gap
+is moderated here by the tiny model on CPU — per-step Python overhead is a large
+fraction of the work — but the scaling separation is the point, and it widens
+with sequence length and model size.
+
+**Batched decoding** (`benchmark.py --batch 8`, `benchmark_batched_results.json`)
+decodes a batch of eight sequences at once with the naive and batched-cached
+paths:
+
+| tokens | naive (s) | cached (s) | speedup |
+| ---: | ---: | ---: | ---: |
+| 16  | 0.232 | 0.143 | 1.62x |
+| 32  | 0.504 | 0.279 | 1.81x |
+| 64  | 1.317 | 0.662 | 1.99x |
+| 128 | 5.335 | 1.202 | 4.44x |
+
+The batched speedup is *larger* than at batch 1 (4.4x at 128 tokens) because one
+Python decode step now drives all eight sequences, so the per-step interpreter
+overhead — the main cost for this tiny model on CPU — is amortized across the
+batch while the naive path still pays a full `O(L^2)` recompute per step.
 
 ## 9. Notes and limitations
 
-- The cached path is batch size 1, as planned; batched asynchronous grouping is
-  future work.
+- The cached path now supports batches: each shortened stack keeps a ragged set
+  of per-member groups in one shared, masked cache (see §5). Because the shared
+  cache appends a slot whenever *any* member closes a group, a large batch with
+  frequent boundaries approaches one slot per token; the ragged compute is still
+  correct but its memory benefit shrinks as the batch grows.
 - The generated sequences are random by construction, so next-token loss floors
-  at the data entropy rather than zero (see Training).
-- The environment is CPU-only; FlashAttention-2 and GPU training are out of
-  scope for this stage.
+  at ~4.64 nats (the per-token entropy averaged with the deterministic final
+  `EOS`; see Training) rather than zero.
+- The environment is CPU-only; migrating the custom relative-attention blocks to
+  FlashAttention-2 and GPU training remain future work.

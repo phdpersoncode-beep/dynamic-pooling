@@ -41,9 +41,30 @@ Plan / status:
       cached buffers hold the same per-stack keys/values as the naive path, per
       sequence, matching each member's real (non-padding) slots — and asserts a
       gap was actually present so the ragged path is exercised.
-- [ ] **Runtime scripts load `tokenizer.json`**; custom group rules persisted
-      via a named-rule registry (tokenizer files + checkpoints).
-- [ ] **Report entropy floor** includes the deterministic final-EOS term.
+- [x] **Runtime scripts load `tokenizer.json`**; custom group rules persisted
+      via a named-rule registry (limitations "Runtime scripts construct the
+      default tokenizer instead of loading tokenizer.json" and "Custom grouping
+      rules are not stored in tokenizer files or checkpoints"). Added a
+      `@register_group_rule` registry: rules are stored by name in
+      `tokenizer.json` and in checkpoints (`Tokenizer.to_meta`) and resolved on
+      load; raw unregistered callables still run but save as `null` (documented).
+      `generator`, `train_toy`, `demo_decode`, `benchmark`, `visualize` now use
+      `Tokenizer.load_or_default()` / rebuild the tokenizer from the checkpoint
+      instead of constructing a bare default. Tests in `tests/test_tokenizer.py`.
+- [x] **Report entropy floor** includes the deterministic final-EOS term
+      (limitation "The report's entropy-floor calculation omits the deterministic
+      final EOS contribution"). The per-body-token entropy is 4.711 nats, but the
+      reported loss averages over the 63 targets of a length-64 sequence whose
+      last target is a deterministic `EOS` (loss ~0), so the floor is
+      (62/63)*4.711 ~= 4.637 nats, not 4.711. Fixed the report §7, the
+      `train_toy` floor line/figures, and added a batched benchmark
+      (`benchmark.py --batch`).
+
+All seven `AGENTS.md` limitations are addressed. The naive `forward` remains the
+correctness oracle; the batched cached path matches it to float precision on
+generated data with divergent grouping, and the cached keys/values match too.
+The remaining `AGENTS.md` item — migrating the Transformer-XL attention to
+FlashAttention-2 — is left as future work.
 
 ## Environment
 

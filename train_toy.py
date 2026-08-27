@@ -2,10 +2,12 @@
 
 The generated sequences are intentionally random (uniform x-tokens, random
 boundaries), so on the full set next-token loss cannot approach zero without
-enormous capacity; it floors at the data entropy (~4.71 nats). The point is to
-obtain a genuinely *trained* small model to exercise KV caching. Training uses
-batch size 1 (exact pooling; no ragged-batch padding) with gradient
-accumulation.
+enormous capacity. Each body token has entropy ~4.71 nats, but the mean
+next-token loss also averages in the fixed sequence's final position, which is a
+deterministic EOS (loss ~0). Over the 63 targets of a length-64 sequence the
+floor is therefore (62/63)*4.71 ~= 4.64 nats, not 4.71. The point is to obtain a
+genuinely *trained* small model to exercise KV caching. Training uses batch
+size 1 (exact pooling; no ragged-batch padding) with gradient accumulation.
 
 Defaults below are the hardcoded configuration. CLI flags only override them,
 e.g. `--subset 32 --epochs 300` demonstrates true overfitting (loss -> 0) on a
@@ -36,6 +38,10 @@ EPOCHS = 20
 ACCUM = 20          # sequences per optimizer step
 LR = 3e-4
 SEED = 0
+# Mean next-token loss floor: per-body-token entropy 4.7113 nats averaged over
+# the 63 targets of a length-64 sequence whose last target is a deterministic
+# EOS (loss 0): (62/63) * 4.7113 ~= 4.637 nats.
+ENTROPY_FLOOR = 4.637
 
 
 def latest_dataset(root="tokenizer_data"):
@@ -101,7 +107,8 @@ def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
 
     plt.figure(figsize=(6, 4))
     plt.plot(range(len(losses)), losses, marker="o", ms=3)
-    plt.axhline(4.71, color="gray", ls="--", lw=1, label="data entropy ~4.71")
+    plt.axhline(ENTROPY_FLOOR, color="gray", ls="--", lw=1,
+                label=f"next-token floor ~{ENTROPY_FLOOR:.2f}")
     plt.xlabel("epoch")
     plt.ylabel("mean next-token loss (nats)")
     plt.title(f"Training loss ({n} seqs)")
