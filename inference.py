@@ -6,6 +6,8 @@ sequences b1/b2/b3, derived from the tokens with the tokenizer's causal
 prefix every step; the cached path advances the per-stack KV caches.
 """
 
+import warnings
+
 import torch
 
 from hourglass import HourglassLM
@@ -23,9 +25,21 @@ def load_trained(path, map_location="cpu"):
     model = HourglassLM(n_token=ckpt["vocab_size"], **ckpt["config"])
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
-    tok = (Tokenizer.from_meta(ckpt["tokenizer"]) if "tokenizer" in ckpt
-           else Tokenizer())
-    assert len(tok) == ckpt["vocab_size"], "tokenizer/vocab size mismatch"
+    if "tokenizer" in ckpt:
+        tok = Tokenizer.from_meta(ckpt["tokenizer"])
+    else:
+        # The vocab-size check below cannot detect a differing group rule, so a
+        # silent fallback would reintroduce exactly the mismatch the stored
+        # metadata exists to prevent.
+        warnings.warn(
+            f"{path} has no tokenizer metadata; falling back to the default "
+            "tokenizer. If it was trained with a custom group rule, grouping "
+            "will silently differ -- retrain or migrate the checkpoint.",
+            RuntimeWarning, stacklevel=2)
+        tok = Tokenizer()
+    if len(tok) != ckpt["vocab_size"]:
+        raise ValueError(
+            f"tokenizer/vocab size mismatch: {len(tok)} != {ckpt['vocab_size']}")
     return model, tok, ckpt
 
 
@@ -47,6 +61,12 @@ def eos_lengths(tokens, eos_id, sequence_dim=0):
     return first.clamp(max=T - 1) + 1
 
 
+def _check_prompt(prompt):
+    """All three decoders reject an empty prompt the same way."""
+    if prompt.numel() == 0 or prompt.size(0) == 0:
+        raise ValueError("prompt must contain at least one token")
+
+
 @torch.no_grad()
 def greedy_decode_naive(model, tok, prompt, max_new_tokens=64, stop_on_eos=True):
     """Naive full-recompute greedy decoding.
@@ -59,6 +79,7 @@ def greedy_decode_naive(model, tok, prompt, max_new_tokens=64, stop_on_eos=True)
     member has finished. Use ``eos_lengths`` to recover each member's true end.
     """
     model.eval()
+    _check_prompt(prompt)
     tokens = prompt.clone()
     bsz = tokens.size(1)
     # A member is finished if the prompt already contains EOS.
@@ -84,6 +105,9 @@ def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True
     """KV-cached greedy decoding (batch size 1).
 
     prompt: 1D LongTensor (or list). Returns tokens (T,) and b1/b2/b3 (T,).
+
+    Like the naive and batched-cached decoders, a prompt that already contains
+    ``EOS`` is already finished and is returned unextended.
     """
     model.eval()
     output_device = prompt.device if isinstance(prompt, torch.Tensor) else None
@@ -99,7 +123,10 @@ def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True
         logit = model.step(state, t, c1, c2, c3)
 
     seq = list(prompt)
+    finished = stop_on_eos and tok.eos_id in prompt
     for _ in range(max_new_tokens):
+        if finished:
+            break
         nxt = int(logit[-1, 0].argmax().item())
         seq.append(nxt)
         if stop_on_eos and nxt == tok.eos_id:
@@ -125,6 +152,7 @@ def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
     model.eval()
     if prompt.dim() == 1:
         prompt = prompt.view(-1, 1)
+    _check_prompt(prompt)
     T0, B = prompt.size()
     dev = prompt.device
     state = model.init_state_batched(B, max_len=T0 + max_new_tokens, device=dev)

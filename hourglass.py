@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from shortening import downsample, upsample, level_boundaries
+from shortening import check_closes, downsample, upsample, level_boundaries
 
 
 @torch.jit.script
@@ -120,7 +120,7 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
 
         if self.pre_lnorm:
-            w_head_q, w_head_k, w_head_v = self.qkv_net(self.layer_norm(w))
+            w_heads = self.qkv_net(self.layer_norm(w))
         else:
             w_heads = self.qkv_net(w)
 
@@ -179,15 +179,20 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
 
         return output
 
-    def step_batched(self, x_in, k_buf, v_buf, fill, remb, key_mask,
+    def step_batched(self, x_in, k_buf, v_buf, fill, dist, rk_table, key_mask,
                      r_w_bias, r_r_bias):
         """Batched incremental attention with preallocated, ragged caches.
 
         x_in:     1 x B x C new position (query = key = value source).
         k_buf/v_buf: cap x B x n_head x d_head preallocated caches; the new
                   key/value are written in place at row ``fill``.
-        remb:     L x B x C positional embeddings, already gathered at each
-                  sequence's own relative distance (L = fill + 1).
+        dist:     L x B long, each slot's ordinal distance from the query in
+                  that sequence's own (padding-free) numbering (L = fill + 1).
+        rk_table: cap x n_head x d_head -- ``r_net`` applied once to the
+                  sinusoid distance table. ``r_net`` is linear, so
+                  ``r_net(table)[d] == r_net(table[d])`` and the per-step
+                  relative-position keys are a gather rather than a projection
+                  of the whole key history.
         key_mask: B x L bool, True where a slot must NOT be attended (a padding
                   slot that is not a real group for that sequence).
 
@@ -205,7 +210,7 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
         L = fill + 1
         k = k_buf[:L]                                    # L x B x nh x dh (view)
         v = v_buf[:L]
-        r_head_k = self.r_net(remb).view(L, B, self.n_head, self.d_head)
+        r_head_k = rk_table[dist]                        # L x B x nh x dh
 
         rw_q = w_q + r_w_bias
         AC = torch.einsum('ibnd,jbnd->bnij', rw_q, k)    # B x nh x 1 x L
@@ -258,10 +263,10 @@ class RelPartialLearnableDecoderLayer(nn.Module):
 
         return output
 
-    def step_batched(self, x_in, k_buf, v_buf, fill, remb, key_mask,
+    def step_batched(self, x_in, k_buf, v_buf, fill, dist, rk_table, key_mask,
                      r_w_bias, r_r_bias):
         output = self.dec_attn.step_batched(
-            x_in, k_buf, v_buf, fill, remb, key_mask, r_w_bias, r_r_bias)
+            x_in, k_buf, v_buf, fill, dist, rk_table, key_mask, r_w_bias, r_r_bias)
         return self.pos_ff(output)
 
 
@@ -429,6 +434,8 @@ class MemTransformerLM(nn.Module):
 
 # Stack order in the three-level hourglass architecture.
 STACK_NAMES = ['pre', 'l1_down', 'l2_down', 'l3', 'l2_up', 'l1_up', 'post']
+# Stacks that advance once per token; the rest advance once per closed group.
+TOKEN_RATE_STACKS = frozenset({'pre', 'post'})
 
 
 class HourglassLM(nn.Module):
@@ -515,7 +522,8 @@ class HourglassLM(nn.Module):
         bnd1, bnd2, bnd3 = level_boundaries(
             c1.transpose(0, 1).contiguous(),
             c2.transpose(0, 1).contiguous(),
-            c3.transpose(0, 1).contiguous())
+            c3.transpose(0, 1).contiguous(),
+            dtype=hidden.dtype)
 
         h1 = self.down_ln1(downsample(bnd1, h0, self.null_1))
         h1 = self._run_stack(h1, self.stacks['l1_down'])
@@ -559,7 +567,8 @@ class HourglassLM(nn.Module):
         bsz, dev = state['bsz'], state['valid'][name].device
         for store in ('k', 'v'):
             for i, old in enumerate(state[store][name]):
-                buf = torch.zeros(newcap, bsz, self.n_head, self.d_head, device=dev)
+                buf = torch.zeros(newcap, bsz, self.n_head, self.d_head,
+                                  device=dev, dtype=state['dtype'])
                 buf[:cur] = old
                 state[store][name][i] = buf
         ov = state['valid'][name]
@@ -571,19 +580,38 @@ class HourglassLM(nn.Module):
         """Per-sequence relative geometry for a batched step.
 
         valid_new: L x B bool (which of the L slots are real for each sequence,
-        including the just-appended slot). Returns positional embeddings gathered
-        at each sequence's ordinal distance (L x B x C) and the attention key
-        mask (B x L, True = do not attend).
+        including the just-appended slot). Returns each slot's ordinal distance
+        from the query in that sequence's own padding-free numbering (L x B) and
+        the attention key mask (B x L, True = do not attend).
         """
         L = valid_new.size(0)
         ordv = valid_new.long().cumsum(0)                 # L x B: #valid up to slot
         dist = (ordv[-1].unsqueeze(0) - ordv).clamp_(0, L - 1)   # L x B
-        pos = torch.arange(L, device=valid_new.device, dtype=torch.float)
-        table = self.pos_emb(pos).squeeze(1)              # L x C  (distance -> emb)
-        remb = table[dist]                                # L x B x C
         key_mask = ~valid_new.transpose(0, 1).contiguous()  # B x L
         key_mask[:, -1] = False   # a query always sees its own new slot (no NaN)
-        return remb, key_mask
+        return dist, key_mask
+
+    def _ensure_pos(self, state, need):
+        """(Re)build the cached relative-position keys to cover `need` distances.
+
+        The sinusoid distance table and each attention's ``r_net`` projection of
+        it depend only on the distance, so they are built once per decode and
+        gathered per step instead of being recomputed over the whole key history
+        at every step. This assumes the weights are frozen for the lifetime of
+        the state, which decoding already requires.
+        """
+        if state['pos_cap'] >= need:
+            return
+        cap = max(need, 2 * state['pos_cap'], 8)
+        pos = torch.arange(cap, device=state['device'], dtype=state['dtype'])
+        table = self.pos_emb(pos).squeeze(1)              # cap x C
+        with torch.no_grad():
+            for name in STACK_NAMES:
+                state['rk'][name] = [
+                    layer.dec_attn.r_net(table).view(cap, self.n_head, self.d_head)
+                    for layer in self.stacks[name]
+                ]
+        state['pos_cap'] = cap
 
     def _stack_step_batched(self, state, name, x_new, active):
         """Advance one stack by a single (batched) position.
@@ -595,35 +623,55 @@ class HourglassLM(nn.Module):
             return x_new
         fill = state['fill'][name]
         self._ensure_cap(state, name, fill + 1)
+        self._ensure_pos(state, fill + 1)
         state['valid'][name][fill] = active
-        remb, key_mask = self._geom(state['valid'][name][:fill + 1])
+        dist, key_mask = self._geom(state['valid'][name][:fill + 1])
         out = x_new
         for i, layer in enumerate(layers):
             out = layer.step_batched(
-                out, state['k'][name][i], state['v'][name][i], fill, remb, key_mask,
-                self.r_w_bias, self.r_r_bias)
+                out, state['k'][name][i], state['v'][name][i], fill, dist,
+                state['rk'][name][i], key_mask, self.r_w_bias, self.r_r_bias)
         state['fill'][name] = fill + 1
         return out
 
     def init_state_batched(self, bsz, max_len=None, device=None):
-        """Fresh batched cache state. Pass `max_len` to preallocate exactly (no
-        reallocation); otherwise buffers start small and grow by doubling."""
+        """Fresh batched cache state.
+
+        `max_len` preallocates the token-rate stacks (`pre`/`post`) exactly:
+        they advance once per token, so `max_len + 1` slots is both necessary
+        and sufficient. The pooled stacks advance only when a group closes, at a
+        data-dependent compression ratio, so preallocating them to `max_len`
+        wastes most of the buffer (a level-3 stack typically fills a few percent
+        of it). They start small and grow by doubling instead, which is
+        bit-identical to preallocating and adapts to the actual grouping rate.
+
+        The cached path is inference-only: keys and values are written into the
+        preallocated buffers in place, which autograd cannot track. Train with
+        the naive `forward`, which is also the correctness reference.
+        """
         dev = device or self.r_w_bias.device
-        cap = (max_len + 1) if max_len is not None else 8
-        zc = lambda: torch.zeros(cap, bsz, self.n_head, self.d_head, device=dev)
+        dt = self.r_w_bias.dtype
+        token_cap = (max_len + 1) if max_len is not None else 8
+        pooled_cap = min(token_cap, 16)
         zl = lambda: torch.zeros(bsz, dtype=torch.long, device=dev)
         state = {
-            'bsz': bsz,
+            'bsz': bsz, 'device': dev, 'dtype': dt,
             'k': {}, 'v': {}, 'valid': {}, 'fill': {},
+            'rk': {name: [] for name in STACK_NAMES}, 'pos_cap': 0,
             'l1_sum': None, 'l1_cnt': zl(),
             'l2_sum': None, 'l2_cnt': zl(),
             'l3_sum': None, 'l3_cnt': zl(),
             'h3_last': None, 'e2_last': None, 'f1_last': None,
         }
+        def empty_cache(cap):
+            return torch.zeros(cap, bsz, self.n_head, self.d_head,
+                               device=dev, dtype=dt)
+
         for name in STACK_NAMES:
             nl = len(self.stacks[name])
-            state['k'][name] = [zc() for _ in range(nl)]
-            state['v'][name] = [zc() for _ in range(nl)]
+            cap = token_cap if name in TOKEN_RATE_STACKS else pooled_cap
+            state['k'][name] = [empty_cache(cap) for _ in range(nl)]
+            state['v'][name] = [empty_cache(cap) for _ in range(nl)]
             state['valid'][name] = torch.zeros(cap, bsz, dtype=torch.bool, device=dev)
             state['fill'][name] = 0
 
@@ -651,9 +699,11 @@ class HourglassLM(nn.Module):
         contribute nothing). Returns logits 1 x B x V."""
         B = state['bsz']
         dev = self.r_w_bias.device
+        dt = state['dtype']
+        check_closes(c1, c2, c3)
         if active is None:
             active = torch.ones(B, dtype=torch.bool, device=dev)
-        am = active.view(1, B, 1).float()
+        am = active.view(1, B, 1).to(dt)
         m1 = c1.bool() & active
         m2 = c2.bool() & active
         m3 = c3.bool() & active
@@ -666,31 +716,31 @@ class HourglassLM(nn.Module):
         state['l1_cnt'] = state['l1_cnt'] + active.long()
 
         if bool(m1.any()):
-            cnt = state['l1_cnt'].clamp(min=1).view(1, B, 1).float()
+            cnt = state['l1_cnt'].clamp(min=1).view(1, B, 1).to(dt)
             g1 = self.down_ln1(state['l1_sum'] / cnt)
             r1 = m1.view(1, B, 1)
             state['l1_sum'] = torch.where(r1, torch.zeros_like(state['l1_sum']), state['l1_sum'])
             state['l1_cnt'] = torch.where(m1, torch.zeros_like(state['l1_cnt']), state['l1_cnt'])
             h1 = self._stack_step_batched(state, 'l1_down', g1, m1)
             res1 = h1
-            add1 = h1 * r1.float()
+            add1 = h1 * r1.to(dt)
             state['l2_sum'] = state['l2_sum'] + add1
             state['l2_cnt'] = state['l2_cnt'] + m1.long()
 
             if bool(m2.any()):
-                cnt2 = state['l2_cnt'].clamp(min=1).view(1, B, 1).float()
+                cnt2 = state['l2_cnt'].clamp(min=1).view(1, B, 1).to(dt)
                 g2 = self.down_ln2(state['l2_sum'] / cnt2)
                 r2 = m2.view(1, B, 1)
                 state['l2_sum'] = torch.where(r2, torch.zeros_like(state['l2_sum']), state['l2_sum'])
                 state['l2_cnt'] = torch.where(m2, torch.zeros_like(state['l2_cnt']), state['l2_cnt'])
                 h2 = self._stack_step_batched(state, 'l2_down', g2, m2)
                 res2 = h2
-                add2 = h2 * r2.float()
+                add2 = h2 * r2.to(dt)
                 state['l3_sum'] = state['l3_sum'] + add2
                 state['l3_cnt'] = state['l3_cnt'] + m2.long()
 
                 if bool(m3.any()):
-                    cnt3 = state['l3_cnt'].clamp(min=1).view(1, B, 1).float()
+                    cnt3 = state['l3_cnt'].clamp(min=1).view(1, B, 1).to(dt)
                     g3 = self.down_ln3(state['l3_sum'] / cnt3)
                     r3 = m3.view(1, B, 1)
                     state['l3_sum'] = torch.where(r3, torch.zeros_like(state['l3_sum']), state['l3_sum'])

@@ -42,5 +42,6 @@ def test_cumulative_property():
 
 @pytest.mark.parametrize("probabilities", [(-0.1, 0.1, 0.0), (0.8, 0.3, 0.0)])
 def test_invalid_probabilities_are_rejected(probabilities):
-    with pytest.raises(AssertionError):
+    # ValueError, not AssertionError: input validation must survive `python -O`.
+    with pytest.raises(ValueError):
         generate(1, 8, *probabilities, seed=0)

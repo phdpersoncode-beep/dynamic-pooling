@@ -1,13 +1,30 @@
 import torch
 
 
-def level_boundaries(c1, c2, c3):
+def check_closes(c1, c2, c3):
+    """Validate the close-event contract shared by the naive and cached paths.
+
+    Every close event must be binary and cumulative (`c3 <= c2 <= c1`): a
+    level-2 event also closes level 1, a level-3 event also closes levels 1 and
+    2. `Tokenizer.group` enforces this, but the model is also callable with
+    arrays built by hand or loaded from disk, and a violation makes the naive
+    and cached paths disagree silently (they build different pooled tensors),
+    so it is rejected here rather than propagated.
+    """
+    for name, c in (("c1", c1), ("c2", c2), ("c3", c3)):
+        if not bool(((c == 0) | (c == 1)).all()):
+            raise ValueError(f"{name} must be binary (0/1) close events")
+    if not bool((c2 <= c1).all()) or not bool((c3 <= c2).all()):
+        raise ValueError("close events must be cumulative: c3 <= c2 <= c1")
+
+
+def level_boundaries(c1, c2, c3, dtype=torch.float, validate=True):
     """Derive the pooling-boundary array at each hierarchy level.
 
     Inputs are causal close-events at token resolution (cumulative: c3<=c2<=c1):
         c1, c2, c3: B x T  (1 where the position closes that level)
 
-    Returns:
+    Returns (in `dtype`, which must match the hidden states they pool):
         bnd1: B x T          boundaries used to pool tokens -> level 1
         bnd2: B x (K1max+1)  boundaries used to pool level 1 -> level 2
         bnd3: B x (K2max+1)  boundaries used to pool level 2 -> level 3
@@ -21,21 +38,23 @@ def level_boundaries(c1, c2, c3):
     c1 = c1.long()
     c2 = c2.long()
     c3 = c3.long()
+    if validate:
+        check_closes(c1, c2, c3)
     B = c1.size(0)
 
-    bnd1 = c1.float()
+    bnd1 = c1.to(dtype)
 
     k1_max = int(c1.sum(dim=1).max().item())
     slot1 = torch.cumsum(c1, dim=1) * c1  # boundary token -> its slot 1..K1; else 0
-    bnd2 = torch.zeros(B, k1_max + 1, device=c1.device)
-    bnd2.scatter_(1, slot1, (c2 * c1).float())
-    bnd2[:, 0] = 0.0
+    bnd2 = torch.zeros(B, k1_max + 1, device=c1.device, dtype=dtype)
+    bnd2.scatter_(1, slot1, (c2 * c1).to(dtype))
+    bnd2[:, 0] = 0
 
     k2_max = int(c2.sum(dim=1).max().item())
     slot2 = torch.cumsum(c2, dim=1) * c2
-    bnd3 = torch.zeros(B, k2_max + 1, device=c1.device)
-    bnd3.scatter_(1, slot2, (c3 * c2).float())
-    bnd3[:, 0] = 0.0
+    bnd3 = torch.zeros(B, k2_max + 1, device=c1.device, dtype=dtype)
+    bnd3.scatter_(1, slot2, (c3 * c2).to(dtype))
+    bnd3[:, 0] = 0
 
     return bnd1, bnd2, bnd3
 
@@ -53,7 +72,12 @@ def final(foo,
 
     dim = 2 if upsample else 1
 
-    lel = lel / (lel.sum(dim=dim, keepdim=True) + 1e-9)
+    # Members per slot. An unused (padded) slot has none, and a zero numerator,
+    # so clamping the divisor to 1 leaves it zero -- while dividing by the exact
+    # count, rather than count + eps, makes pooling an exact mean. The eps was
+    # invisible in float32 but is the dominant naive-vs-cached difference in
+    # float64, where the cached path's running mean has no such factor.
+    lel = lel / lel.sum(dim=dim, keepdim=True).clamp(min=1)
 
     return lel
 
@@ -61,7 +85,10 @@ def final(foo,
 def common(boundaries, upsample=False):
     boundaries = boundaries.clone()
 
-    n_segments = boundaries.sum(dim=-1).max().item()
+    # int(): `.item()` on float boundaries yields a Python float, which would
+    # make the arange below float32 and silently upcast the whole computation
+    # (breaking bfloat16/float16 hidden states).
+    n_segments = int(boundaries.sum(dim=-1).max().item())
 
     if upsample:
         n_segments += 1

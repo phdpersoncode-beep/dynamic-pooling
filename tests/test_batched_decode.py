@@ -90,7 +90,6 @@ def test_naive_batched_matches_per_sequence():
     for b in range(len(prompts)):
         single = torch.tensor(padded[b]).view(-1, 1)
         st, _, _, _ = greedy_decode_naive(m, tok, single, max_new_tokens=12)
-        n = min(bt.size(0), st.size(0))
         # Compare up to each member's own EOS length.
         L = int(lens[b].item())
         assert torch.equal(bt[:L, b], st[:L, 0]), b

@@ -3,6 +3,72 @@
 This log tracks progress on the KV-cache work described in `docs/kv_cache_plan.md`
 and the TODOs in `AGENTS.md`. Newest entries first.
 
+## Review follow-up (decoder parity, contract validation, precision, benchmark honesty)
+
+Fixes for defects found while auditing the KV-cache work against the naive
+reference. The naive `forward` remains the oracle; every fix has a regression
+test.
+
+- [x] **A prompt already containing `EOS` is finished for every decoder.**
+      `greedy_decode_naive` and `greedy_decode_cached_batched` seeded their
+      `finished` mask from the prompt; the batch-1 `greedy_decode_cached` did
+      not, so it kept generating and `decode_equivalence` reported a mismatch on
+      a three-token input — falsifying the "naive and cached emit identical
+      tokens" claim. All three now agree, and all three reject an empty prompt
+      with the same `ValueError` (they previously raised `ValueError`,
+      `TypeError` and `IndexError`).
+- [x] **Close events are validated on both paths** (`shortening.check_closes`).
+      `c3 <= c2 <= c1` was enforced only inside `Tokenizer.group`, but the model
+      is also called with arrays loaded from `data.pt` or built by hand. A
+      violation used to be accepted silently by both paths *and make them
+      disagree by ~0.35* (they build different pooled tensors); a non-binary
+      `c1` raised an opaque scatter `IndexError` on the naive path and was
+      accepted by the cached one. Both now raise `ValueError`.
+- [x] **Pooling is an exact mean.** `shortening.final` divided by
+      `count + 1e-9`, so the naive path scaled every pooled and upsampled value
+      by ~(1 - 1e-9) while the cached path's running mean did not. Invisible in
+      float32; in float64 it was the *dominant* naive-vs-cached difference.
+      Dividing by `count.clamp(min=1)` is identical for empty slots and exact
+      otherwise, and the two paths now agree to ~1e-14 in double precision —
+      seven orders tighter than the float32 tolerance, which is the real
+      evidence that the cached path is algebraically identical rather than close.
+- [x] **Relative-position keys are cached instead of recomputed.** `_geom`
+      rebuilt the sinusoid table and the attention step projected the entire key
+      history through `r_net` on every step (~15% and ~6% of cached decode time
+      at 256 tokens). `r_net` is linear, so `r_net(table)[d] == r_net(table[d])`
+      exactly: the projection is now done once per decode and gathered per step.
+      Cached decoding of 256 tokens went 0.97s -> 0.81s.
+- [x] **Precision is no longer hard-wired to float32.** Pooling boundaries
+      follow the hidden-state dtype, caches follow the model dtype, and
+      `shortening.common` no longer derives its `arange` from a float `.item()`
+      (which silently upcast bfloat16 to float32). float64 and bfloat16 now run
+      end to end; float64 is exact to round-off.
+- [x] **Pooled caches are no longer preallocated to the token rate.** Every
+      stack was given `max_len + 1` slots, but the pooled stacks advance only on
+      a closed group — a 200-token decode filled 10 of 201 level-3 slots. The
+      token-rate stacks keep exact preallocation; the pooled stacks grow by
+      doubling, which is bit-identical (verified) and cut allocated slots from
+      1407 to 738 on that decode.
+- [x] **The batched benchmark exercises the path it measures.** It timed eight
+      *identical* prompts, which under greedy argmax decode identically: 1
+      distinct sequence and **0% ragged padding**, so the headline batched
+      number never touched the ragged cache at all. `divergent_prompt` now seeds
+      each member with a different number of boundary tokens, giving 8/8
+      distinct sequences and 3-13% padding; the benchmark records both figures
+      per row. The speedup at 256 tokens is 17.9x (the run now extends to 256).
+- [x] **Checkpoints carry their tokenizer metadata.** `toy.pt`/`overfit32.pt`
+      predated the persistence feature, so `load_trained` silently fell back to
+      the default tokenizer — the exact mismatch that feature exists to prevent,
+      and one the vocab-size check cannot detect. Metadata was added in place
+      (all 169 weight tensors verified byte-identical, so every number in the
+      report still stands) and a missing-metadata load now warns.
+- [x] **Nits.** The `pre_lnorm=True` branch of the inherited attention block was
+      dead *and* broken (unbound `w_heads`); it now runs. Caller-input
+      validation in `generator`/`train_toy` raises `ValueError` instead of
+      `assert`, which `python -O` strips.
+
+Test suite: 49 tests (was 36).
+
 ## Limitations follow-up (batching, EOS, persistence)
 
 Addressing the `AGENTS.md` limitations list. The naive `forward` remains the
@@ -109,7 +175,9 @@ FlashAttention-2 — is left as future work.
       logits. Tests in `tests/test_inference.py` pass.
 - [x] Training (`train_toy.py`): small model (d_model 64, layers 2/2/1/1/1/2/2,
       ~448k params), batch size 1 + grad accumulation. On the 1000-sequence set
-      loss reaches the data entropy floor (~4.71 nats) by epoch ~2 and dips to
+      loss reaches the data entropy floor (~4.71 nats -- superseded: the mean
+      next-token floor is (62/63)*4.711 ~= 4.637, see the entropy-floor entry
+      above) by epoch ~2 and dips to
       4.58 via memorization (`docs/figures/train_loss.png`). A 32-sequence run
       overfits to 0.09 nats, demonstrating the loop can memorize
       (`docs/figures/overfit32_loss.png`). Checkpoint: `checkpoints/toy.pt`.
@@ -117,11 +185,13 @@ FlashAttention-2 — is left as future work.
       temperature-sampled (all three levels) decoding from the trained model,
       both matching the naive path; figure `docs/figures/generated_grouping.png`.
 - [x] Speed profiling (`benchmark.py`): naive vs KV-cached greedy decoding.
-      Cache speedup grows with length (1.8x @16 -> 3.0x @256 tokens), naive
-      super-linear vs cached near-linear. Figures `benchmark_time.png`,
+      Cache speedup grows with length, naive super-linear vs cached near-linear.
+      (Figures superseded twice since -- see the review follow-up entry above
+      for the current tables.) Figures `benchmark_time.png`,
       `benchmark_speedup.png`, data `benchmark_results.json`.
-- [x] Full test suite (`tests/`, 24 tests) passes, including explicit incomplete
-      groups, context-dependent grouping rules, and zero-layer stack configs.
+- [x] Full test suite (`tests/`, 24 tests at the time; 49 now) passes, including
+      explicit incomplete groups, context-dependent grouping rules, and
+      zero-layer stack configs.
 - [x] Final report: `docs/report.md`.
 
 All `AGENTS.md` KV-cache TODOs are addressed. The original non-cached path is

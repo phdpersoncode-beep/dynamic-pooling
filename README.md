@@ -33,10 +33,18 @@ can be skipped when only testing decoding or the cache.
 
 The original text8/wiki40b preprocessing assets are not part of this feature
 branch. The new experiment uses the rule-based toy data from `generator.py`.
-## Training:
-- Training by default starts with a simple test that checks the autoregressive property of a model. We support grad accummulation, distributed training, half precision training.
 
-- To run training use:
+## Training:
+
+- **Toy three-level model** (this branch): `uv run python train_toy.py`, which
+  reads the checked-in dataset under `tokenizer_data/` — see the section above.
+
+- **Original text8/wiki40b model**: `train.py` and `configs/` are preserved and
+  still work, but the download and preprocessing scripts they depend on were
+  removed with the other boundary predictors, so `data/text8` has to be
+  supplied by hand (see the upstream repository). Training starts with a test
+  that checks the autoregressive property of the model, and supports gradient
+  accumulation, distributed training and half precision:
 ```
 C=configs/whitespaces.yaml GPUS= bash scripts/run_exp.sh
 ```

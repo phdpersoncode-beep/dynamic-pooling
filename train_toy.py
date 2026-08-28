@@ -52,8 +52,10 @@ def latest_dataset(root="tokenizer_data"):
 
 def train(epochs=EPOCHS, lr=LR, accum=ACCUM, seed=SEED, subset=None,
           ckpt_path="checkpoints/toy.pt", loss_fig="docs/figures/train_loss.png"):
-    assert accum > 0, "accum must be positive"
-    assert subset is None or subset > 0, "subset must be positive"
+    if accum <= 0:
+        raise ValueError("accum must be positive")
+    if subset is not None and subset <= 0:
+        raise ValueError("subset must be positive")
     torch.manual_seed(seed)
     tok = Tokenizer.load_or_default()
     ds_dir = latest_dataset()
