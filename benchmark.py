@@ -165,19 +165,30 @@ def main():
     ap.add_argument("--threads", type=int, default=1)
     ap.add_argument("--batch", type=int, default=1,
                     help="if > 1, also benchmark batched decoding at this size")
+    ap.add_argument("--dtype", default="float32",
+                    choices=["float32", "float64", "bfloat16"],
+                    help="bfloat16 halves the weights and the KV cache")
     args = ap.parse_args()
 
+    dtype = getattr(torch, args.dtype)
     torch.set_num_threads(args.threads)
     if os.path.exists(args.ckpt):
-        model, tok, _ = load_trained(args.ckpt)
-        print(f"loaded {args.ckpt}")
+        model, tok, _ = load_trained(args.ckpt, dtype=dtype)
+        print(f"loaded {args.ckpt} as {args.dtype}")
     else:
         tok = Tokenizer.load_or_default()
         torch.manual_seed(0)
         model = HourglassLM(n_token=len(tok), n_head=4, d_model=64, d_head=16,
                             d_inner=128, layers=(2, 2, 1, 1, 1, 2, 2))
-        model.eval()
-        print("no checkpoint; using a fresh random model")
+        model = model.to(dtype).eval()
+        print(f"no checkpoint; using a fresh random {args.dtype} model")
+
+    state = model.init_state_batched(1, max_len=max(args.lengths))
+    cache_bytes = sum(t.numel() * t.element_size()
+                      for n in state['k'] for t in state['k'][n] + state['v'][n])
+    weight_bytes = sum(p.numel() * p.element_size() for p in model.parameters())
+    print(f"weights {weight_bytes/1024:.0f} KiB, "
+          f"KV cache at T={max(args.lengths)} {cache_bytes/1024:.0f} KiB")
 
     rows = run(model, tok, args.lengths, args.repeats)
     plot(rows)

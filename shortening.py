@@ -1,5 +1,23 @@
 import torch
 
+# Reduced-precision types whose reductions must accumulate in float32.
+_LOW_PRECISION = (torch.bfloat16, torch.float16)
+
+
+def accum_dtype(dtype):
+    """Dtype to accumulate pooling reductions in.
+
+    bfloat16 carries 8 mantissa bits, so both halves of a pooled mean round at
+    ~0.4%: a `1/n` weight is off by up to 0.2% (a *systematic* bias on every
+    pooled value) and a running sum re-rounds at every term. torch already
+    accumulates bfloat16 `sum`/`einsum` in float32 internally; doing the same
+    for the normalisation and for the cache's incremental means keeps pooling
+    accurate and, because both paths then reduce identically, keeps them
+    numerically equivalent. Storage stays in the model dtype -- only the
+    arithmetic is widened. A no-op for float32 and float64.
+    """
+    return torch.float32 if dtype in _LOW_PRECISION else dtype
+
 
 def check_closes(c1, c2, c3):
     """Validate the close-event contract shared by the naive and cached paths.
@@ -77,6 +95,8 @@ def final(foo,
     # count, rather than count + eps, makes pooling an exact mean. The eps was
     # invisible in float32 but is the dominant naive-vs-cached difference in
     # float64, where the cached path's running mean has no such factor.
+    # Normalise in the accumulation dtype: see `accum_dtype`.
+    lel = lel.to(accum_dtype(lel.dtype))
     lel = lel / lel.sum(dim=dim, keepdim=True).clamp(min=1)
 
     return lel
@@ -137,7 +157,9 @@ def downsample(boundaries, hidden, null_group):
     else:
         bar = final(foo=foo, upsample=False)  # B x L x S
 
-        shortened_hidden = torch.einsum('lbd,bls->sbd', hidden, bar)
+        # Reduce in `bar`'s (accumulation) dtype, store in the hidden dtype.
+        shortened_hidden = torch.einsum(
+            'lbd,bls->sbd', hidden.to(bar.dtype), bar).to(hidden.dtype)
         shortened_hidden = torch.cat(
             [null_group.repeat(1, hidden.size(1), 1), shortened_hidden], dim=0
         )
@@ -163,4 +185,6 @@ def upsample(boundaries, shortened_hidden):
     foo = common(boundaries, upsample=True)  # B x L x S
     bar = final(foo, upsample=True)  # B x L x S
 
-    return torch.einsum('sbd,bls->lbd', shortened_hidden, bar)
+    return torch.einsum(
+        'sbd,bls->lbd', shortened_hidden.to(bar.dtype), bar
+    ).to(shortened_hidden.dtype)

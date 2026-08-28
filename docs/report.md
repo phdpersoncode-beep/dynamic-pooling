@@ -117,9 +117,21 @@ identical while removing an O(L·B·C²) matmul per layer per step.
 
 **Precision.** The pooling boundaries follow the hidden-state dtype and the
 caches follow the model dtype, so the whole path runs in float64, float32 or
-bfloat16. Close events are validated (`shortening.check_closes`) on both paths:
-they must be binary and cumulative, since a violated contract makes the naive
-and cached paths build different pooled tensors and disagree silently.
+bfloat16 (`load_trained(..., dtype=torch.bfloat16)`, `benchmark.py --dtype`).
+
+Storage narrows but *reductions do not*. bfloat16 has 8 mantissa bits, so both
+halves of a pooled mean round at ~0.4%: a `1/n` weight is off by up to 0.2% —
+a systematic bias on every pooled value — and an incremental running sum
+re-rounds at every term, drifting further the longer the group. torch already
+accumulates bfloat16 `sum`/`einsum`/matmul in float32 internally;
+`shortening.accum_dtype` applies the same rule to the normalisation and to the
+cache's incremental group means. Both paths then reduce identically, so the
+cache adds no error of its own. It is a no-op for float32 and float64, whose
+results are unchanged.
+
+Close events are validated (`shortening.check_closes`) on both paths: they must
+be binary and cumulative, since a violated contract makes the naive and cached
+paths build different pooled tensors and disagree silently.
 
 **EOS.** Both the naive and cached batched decoders stop each member
 independently: once a member emits `EOS` its tail is frozen and it is dropped
@@ -145,6 +157,11 @@ All checks run with dropout disabled and deterministic `group()` boundaries.
 - **Contract violations are rejected** — non-binary or non-cumulative close
   events raise `ValueError` on both paths rather than being silently accepted
   (they previously produced a ~0.35 logit disagreement).
+- **bfloat16 is validated, not merely runnable** — see §8.1. Logit comparisons
+  use `inference.logit_tolerance(dtype, scale)` (`16 * eps * scale`) rather than
+  a hard-coded `1e-5`, which is a float32 constant that says nothing about a
+  dtype with a 65000x larger epsilon; the same yardstick holds in float64,
+  float32 and bfloat16.
 - **Greedy decode equivalence** — naive and cached greedy decoding emit
   identical token sequences and identical per-step logits
   (`tests/test_inference.py`), and both track `x_seq` and `b1/b2/b3_seq` via
@@ -255,6 +272,46 @@ All timings are single-threaded CPU on one machine and are meant to be read as
 ratios, not absolutes; `docs/figures/benchmark_time.png` and
 `benchmark_speedup.png` plot the batch-1 curves.
 
+### 8.1 bfloat16
+
+`benchmark.py --dtype bfloat16` runs the same profile with the model and caches
+in bfloat16. Both halve:
+
+| | float32 | bfloat16 |
+| --- | ---: | ---: |
+| weights | 1751 KiB | 876 KiB |
+| KV cache (B=1, T=256) | 570 KiB | 285 KiB |
+| cached decode, 256 tokens | 0.812s | 1.326s |
+
+The cache still beats full recompute inside bfloat16 (1.83x at 16 tokens to
+4.64x at 256), but bfloat16 is **1.6x slower than float32 in absolute terms** on
+this CPU: there are no native bfloat16 kernels here, so torch widens to float32
+per operation and pays the conversions without the arithmetic saving. bfloat16
+is a memory trade on this machine, not a speed one; on hardware with bfloat16
+support the halved footprint comes without that penalty.
+
+Accuracy, measured on the *trained* checkpoint over 32 sequences (2048 next-token
+positions):
+
+| comparison | argmax agreement | max abs logit diff |
+| --- | ---: | ---: |
+| bfloat16 cached vs bfloat16 naive | **100.00%** | 0.31 |
+| bfloat16 naive vs float32 naive | 99.95% | 0.27 |
+| bfloat16 cached vs float32 naive | 99.95% | 0.32 |
+
+The cached path picks the same token as the naive path at **every** position,
+and greedy decoding in bfloat16 — naive and cached — reproduces the float32
+tokens exactly. The single bfloat16-vs-float32 flip sits where the float32 top-2
+logit gap is 0.0072, well inside bfloat16's resolution at this logit scale
+(0.043), i.e. a genuine near-tie rather than a defect; the median top-2 gap is
+0.73.
+
+One caveat worth stating plainly: these numbers come from a *trained* model. On
+an **untrained** model the logits are near-uniform, so essentially every argmax
+is a near-tie and any rounding flips a few percent of them — measuring the toy
+task's flatness, not the implementation. Tests therefore pin bfloat16 behaviour
+against the trained checkpoint.
+
 ## 9. Notes and limitations
 
 - The cached path supports batches: each shortened stack keeps a ragged set of
@@ -262,10 +319,11 @@ ratios, not absolutes; `docs/figures/benchmark_time.png` and
   cache appends a slot whenever *any* member closes a group, a large batch with
   frequent boundaries approaches one slot per token; the ragged compute is still
   correct but its memory benefit shrinks as the batch grows.
-- Reduced precision runs but is not validated for quality: bfloat16 agrees with
-  the naive path only to the dtype's own ~3 decimal digits, and argmax
-  agreement on a random model is ~96%, not 100%. float64 and float32 are exact
-  to round-off.
+- bfloat16 halves the weights and the KV cache and leaves greedy decoding
+  unchanged (§8.1), but it is *slower* than float32 on a CPU without native
+  bfloat16 kernels, and its ~3 significant digits will flip near-tied argmaxes.
+  Treat it as a memory trade, and check it against your own model rather than
+  assuming the toy result transfers.
 - Pooled caches grow by doubling rather than being preallocated, so a decode can
   hold up to 2x the slots it ends up using. That is a deliberate trade against
   sizing every stack for the token rate, which over-allocated a level-3 buffer

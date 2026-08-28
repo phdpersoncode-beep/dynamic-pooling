@@ -16,7 +16,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from shortening import check_closes, downsample, upsample, level_boundaries
+from shortening import (accum_dtype, check_closes, downsample, upsample,
+                        level_boundaries)
 
 
 @torch.jit.script
@@ -651,11 +652,12 @@ class HourglassLM(nn.Module):
         """
         dev = device or self.r_w_bias.device
         dt = self.r_w_bias.dtype
+        acc = accum_dtype(dt)          # caches stay in `dt`; group means widen
         token_cap = (max_len + 1) if max_len is not None else 8
         pooled_cap = min(token_cap, 16)
         zl = lambda: torch.zeros(bsz, dtype=torch.long, device=dev)
         state = {
-            'bsz': bsz, 'device': dev, 'dtype': dt,
+            'bsz': bsz, 'device': dev, 'dtype': dt, 'accum_dtype': acc,
             'k': {}, 'v': {}, 'valid': {}, 'fill': {},
             'rk': {name: [] for name in STACK_NAMES}, 'pos_cap': 0,
             'l1_sum': None, 'l1_cnt': zl(),
@@ -682,8 +684,8 @@ class HourglassLM(nn.Module):
         h2_null = self._stack_step_batched(state, 'l2_down', self.down_ln2(rep(self.null_2)), active)
         h3_null = self._stack_step_batched(state, 'l3', self.down_ln3(rep(self.null_3)), active)
         ones = torch.ones(bsz, dtype=torch.long, device=dev)
-        state['l2_sum'], state['l2_cnt'] = h1_null.clone(), ones.clone()
-        state['l3_sum'], state['l3_cnt'] = h2_null.clone(), ones.clone()
+        state['l2_sum'], state['l2_cnt'] = h1_null.to(acc), ones.clone()
+        state['l3_sum'], state['l3_cnt'] = h2_null.to(acc), ones.clone()
         state['h3_last'] = h3_null
         e2_null = self._stack_step_batched(state, 'l2_up', state['h3_last'] + h2_null, active)
         state['e2_last'] = e2_null
@@ -699,11 +701,11 @@ class HourglassLM(nn.Module):
         contribute nothing). Returns logits 1 x B x V."""
         B = state['bsz']
         dev = self.r_w_bias.device
-        dt = state['dtype']
+        dt, acc = state['dtype'], state['accum_dtype']
         check_closes(c1, c2, c3)
         if active is None:
             active = torch.ones(B, dtype=torch.bool, device=dev)
-        am = active.view(1, B, 1).to(dt)
+        am = active.view(1, B, 1).to(acc)
         m1 = c1.bool() & active
         m2 = c2.bool() & active
         m3 = c3.bool() & active
@@ -711,37 +713,37 @@ class HourglassLM(nn.Module):
         x = self.drop(self.word_emb(tokens.view(1, B)))
         a_t = self._stack_step_batched(state, 'pre', x, active)
         res0 = a_t
-        add = a_t * am
+        add = a_t.to(acc) * am
         state['l1_sum'] = add if state['l1_sum'] is None else state['l1_sum'] + add
         state['l1_cnt'] = state['l1_cnt'] + active.long()
 
         if bool(m1.any()):
-            cnt = state['l1_cnt'].clamp(min=1).view(1, B, 1).to(dt)
-            g1 = self.down_ln1(state['l1_sum'] / cnt)
+            cnt = state['l1_cnt'].clamp(min=1).view(1, B, 1).to(acc)
+            g1 = self.down_ln1((state['l1_sum'] / cnt).to(dt))
             r1 = m1.view(1, B, 1)
             state['l1_sum'] = torch.where(r1, torch.zeros_like(state['l1_sum']), state['l1_sum'])
             state['l1_cnt'] = torch.where(m1, torch.zeros_like(state['l1_cnt']), state['l1_cnt'])
             h1 = self._stack_step_batched(state, 'l1_down', g1, m1)
             res1 = h1
-            add1 = h1 * r1.to(dt)
+            add1 = h1.to(acc) * r1.to(acc)
             state['l2_sum'] = state['l2_sum'] + add1
             state['l2_cnt'] = state['l2_cnt'] + m1.long()
 
             if bool(m2.any()):
-                cnt2 = state['l2_cnt'].clamp(min=1).view(1, B, 1).to(dt)
-                g2 = self.down_ln2(state['l2_sum'] / cnt2)
+                cnt2 = state['l2_cnt'].clamp(min=1).view(1, B, 1).to(acc)
+                g2 = self.down_ln2((state['l2_sum'] / cnt2).to(dt))
                 r2 = m2.view(1, B, 1)
                 state['l2_sum'] = torch.where(r2, torch.zeros_like(state['l2_sum']), state['l2_sum'])
                 state['l2_cnt'] = torch.where(m2, torch.zeros_like(state['l2_cnt']), state['l2_cnt'])
                 h2 = self._stack_step_batched(state, 'l2_down', g2, m2)
                 res2 = h2
-                add2 = h2 * r2.to(dt)
+                add2 = h2.to(acc) * r2.to(acc)
                 state['l3_sum'] = state['l3_sum'] + add2
                 state['l3_cnt'] = state['l3_cnt'] + m2.long()
 
                 if bool(m3.any()):
-                    cnt3 = state['l3_cnt'].clamp(min=1).view(1, B, 1).to(dt)
-                    g3 = self.down_ln3(state['l3_sum'] / cnt3)
+                    cnt3 = state['l3_cnt'].clamp(min=1).view(1, B, 1).to(acc)
+                    g3 = self.down_ln3((state['l3_sum'] / cnt3).to(dt))
                     r3 = m3.view(1, B, 1)
                     state['l3_sum'] = torch.where(r3, torch.zeros_like(state['l3_sum']), state['l3_sum'])
                     state['l3_cnt'] = torch.where(m3, torch.zeros_like(state['l3_cnt']), state['l3_cnt'])

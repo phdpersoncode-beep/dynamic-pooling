@@ -14,12 +14,36 @@ from hourglass import HourglassLM
 from tokenizer import Tokenizer
 
 
-def load_trained(path, map_location="cpu"):
+DEPTH_FACTOR = 16
+"""Error growth across this model's seven stacked transformer blocks.
+
+Empirical: naive-vs-cached differences land within `DEPTH_FACTOR * eps * scale`
+in float64, float32 and bfloat16 alike (measured 3x-8x inside it in each).
+"""
+
+
+def logit_tolerance(dtype, scale=1.0):
+    """Dtype-appropriate absolute tolerance for comparing logits.
+
+    A hard-coded `1e-5` is a float32 yardstick and says nothing in bfloat16,
+    whose epsilon is ~65000x larger. `scale` is the magnitude of the logits
+    being compared (pass `logits.abs().max()`); tolerance is proportional to it
+    because the comparison is really a relative one.
+    """
+    eps = torch.finfo(dtype).eps
+    return DEPTH_FACTOR * eps * max(float(scale), 1.0)
+
+
+def load_trained(path, map_location="cpu", dtype=None):
     """Reconstruct a HourglassLM and its tokenizer from a train_toy checkpoint.
 
     Returns (model, tokenizer, checkpoint). The tokenizer (including any custom
     group rule) is rebuilt from the checkpoint's metadata; older checkpoints
     without it fall back to the default tokenizer.
+
+    `dtype` casts the model on load — `torch.bfloat16` halves the weights and
+    the KV cache, at the cost of bfloat16's ~3 significant digits (see
+    `docs/report.md` §5 for what that does and does not change).
     """
     ckpt = torch.load(path, map_location=map_location)
     model = HourglassLM(n_token=ckpt["vocab_size"], **ckpt["config"])
@@ -40,6 +64,8 @@ def load_trained(path, map_location="cpu"):
     if len(tok) != ckpt["vocab_size"]:
         raise ValueError(
             f"tokenizer/vocab size mismatch: {len(tok)} != {ckpt['vocab_size']}")
+    if dtype is not None:
+        model = model.to(dtype)
     return model, tok, ckpt
 
 
@@ -205,7 +231,12 @@ def format_decode(tok, tokens, b1, b2, b3):
 @torch.no_grad()
 def decode_equivalence(model, tok, prompt, max_new_tokens=64):
     """Run both decoders on the same prompt and compare token sequences and
-    per-step logits. Returns (ok, max_logit_diff)."""
+    per-step logits. Returns (ok, max_logit_diff).
+
+    Compare `max_logit_diff` against `logit_tolerance(logits.dtype, scale)`
+    rather than a fixed constant: in bfloat16 a float32 threshold is meaningless.
+    `ok` (identical tokens) is the criterion that matters for decoding.
+    """
     model.eval()
     prompt1 = prompt.view(-1, 1)                    # T0 x 1 for naive
     naive_tokens, _, _, _ = greedy_decode_naive(

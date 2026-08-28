@@ -3,6 +3,50 @@
 This log tracks progress on the KV-cache work described in `docs/kv_cache_plan.md`
 and the TODOs in `AGENTS.md`. Newest entries first.
 
+## bfloat16 made usable
+
+Follow-up to the review fixes: reduced precision previously "ran" but was
+explicitly not validated for quality. One real implementation defect was
+found and fixed, and the rest of the gap turned out to be a measurement
+artefact.
+
+- [x] **Pooling reductions accumulate in float32** (`shortening.accum_dtype`).
+      Storage narrows with the model dtype; the arithmetic does not. In
+      bfloat16 a `1/n` pooling weight is off by up to 0.2% — a *systematic*
+      bias on every pooled value — and the cache's incremental running sum
+      re-rounds at every term, drifting further the longer the group. torch
+      already accumulates bfloat16 `sum`/`einsum`/matmul in float32 internally;
+      the normalisation in `final` and the cached group means now do the same,
+      so both paths reduce identically and the cache adds no error of its own.
+      A no-op for float32 and float64 (their results are unchanged, including
+      the ~1e-14 float64 agreement).
+- [x] **Dtype-aware logit tolerance** (`inference.logit_tolerance`). Comparing
+      bfloat16 logits against a hard-coded `1e-5` is meaningless — that is a
+      float32 constant for a dtype with a 65000x larger epsilon. One yardstick,
+      `16 * eps * scale`, now covers float64, float32 and bfloat16 (measured
+      3x-8x inside it in each).
+- [x] **bfloat16 is first-class**: `load_trained(..., dtype=...)` casts on load
+      and `benchmark.py --dtype {float32,float64,bfloat16}` profiles it,
+      reporting weight and KV-cache footprints.
+- [x] **Verified, not assumed.** On the trained checkpoint over 2048 next-token
+      positions the bfloat16 cached path picks the same token as the bfloat16
+      naive path at **100%** of positions, and greedy decoding in bfloat16
+      reproduces the float32 tokens exactly. The one bfloat16-vs-float32 argmax
+      flip sits at a float32 top-2 gap of 0.0072, inside bfloat16's resolution
+      at that logit scale (0.043) — a genuine near-tie.
+- [x] **The earlier "~96% argmax" figure was a measurement artefact.** It came
+      from an *untrained* model, whose logits on this deliberately near-uniform
+      toy task are all near-ties, so any rounding flips a few percent of them.
+      Tests now pin bfloat16 behaviour against the trained checkpoint.
+- [x] **Honest cost.** bfloat16 halves the weights (1751 -> 876 KiB) and the KV
+      cache (570 -> 285 KiB at T=256) but is **1.6x slower than float32** on
+      this CPU, which has no native bfloat16 kernels: torch widens to float32
+      per operation and pays the conversions without the arithmetic saving. It
+      is a memory trade here, not a speed one. Widening softmax or the attention
+      accumulation was tried and changes nothing — torch already does both.
+
+Test suite: 57 tests (was 50).
+
 ## Review follow-up (decoder parity, contract validation, precision, benchmark honesty)
 
 Fixes for defects found while auditing the KV-cache work against the naive

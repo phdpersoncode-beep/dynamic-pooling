@@ -24,6 +24,7 @@ uv run pytest
 uv run python train_toy.py
 uv run python demo_decode.py
 uv run python benchmark.py
+uv run python benchmark.py --dtype bfloat16   # halves weights and KV cache
 ```
 
 The generated toy dataset is already checked in, so generation and training

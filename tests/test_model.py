@@ -4,6 +4,8 @@ import torch
 from generator import generate
 from hourglass import (HourglassLM,
                        RelPartialLearnableMultiHeadAttn)
+from inference import logit_tolerance
+from shortening import accum_dtype, downsample
 from tokenizer import Tokenizer
 
 
@@ -103,18 +105,57 @@ def test_cached_matches_naive_to_float64_roundoff():
         (naive - cached).abs().max().item()
 
 
-def test_cached_matches_naive_in_bfloat16():
-    """Reduced precision runs end to end and keeps the pooled dtype."""
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32, torch.bfloat16])
+def test_cached_matches_naive_within_dtype_tolerance(dtype):
+    """One yardstick across precisions: `DEPTH_FACTOR * eps * scale`.
+
+    A hard-coded 1e-5 is a float32 constant and says nothing about bfloat16,
+    whose epsilon is ~65000x larger.
+    """
     m, tok = make_model(seed=19)
-    m = m.to(torch.bfloat16)
+    m = m.to(dtype)
     data, c1, c2, c3 = _seq(tok, 24, seed=23)
     with torch.no_grad():
         naive = m(data, c1, c2, c3)
         cached = m.cached_forward_batched(data, c1, c2, c3)
-    assert naive.dtype == cached.dtype == torch.bfloat16
+    assert naive.dtype == cached.dtype == dtype
     assert torch.isfinite(cached).all()
-    # bfloat16 carries ~3 decimal digits; only the dtype's own rounding remains.
-    assert (naive.float() - cached.float()).abs().max().item() < 0.5
+    tol = logit_tolerance(dtype, naive.float().abs().max().item())
+    assert (naive.float() - cached.float()).abs().max().item() < tol
+
+
+def test_bfloat16_pooling_reduces_in_float32():
+    """The naive pooled mean must equal an incremental float32 running mean
+    *exactly*.
+
+    That equality is what lets the cached path track the naive one in bfloat16
+    rather than drifting further at every group member: a bfloat16 `1/n` weight
+    is off by up to 0.2% and a bfloat16 running sum re-rounds at every term.
+    Both paths reduce in float32 and store in bfloat16, so both land on the
+    same value.
+    """
+    n, d = 64, 32
+    torch.manual_seed(0)
+    hidden = torch.randn(n, 1, d).to(torch.bfloat16)
+    boundaries = torch.zeros(1, n, dtype=torch.bfloat16)
+    boundaries[0, -1] = 1.0                       # one group covering all n rows
+    null = torch.zeros(1, 1, d, dtype=torch.bfloat16)
+
+    pooled = downsample(boundaries, hidden, null)[1, 0]
+    acc = torch.zeros(d, dtype=accum_dtype(torch.bfloat16))
+    for t in range(n):                            # what the cache does per step
+        acc = acc + hidden[t, 0].to(acc.dtype)
+    incremental = (acc / n).to(torch.bfloat16)
+
+    assert pooled.dtype == torch.bfloat16         # storage stays narrow
+    assert torch.equal(pooled, incremental)
+
+
+def test_accum_dtype_only_widens_low_precision():
+    assert accum_dtype(torch.bfloat16) is torch.float32
+    assert accum_dtype(torch.float16) is torch.float32
+    assert accum_dtype(torch.float32) is torch.float32
+    assert accum_dtype(torch.float64) is torch.float64
 
 
 def test_non_cumulative_closes_are_rejected():
