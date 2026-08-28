@@ -3,6 +3,39 @@
 This log tracks progress on the KV-cache work described in `docs/kv_cache_plan.md`
 and the TODOs in `AGENTS.md`. Newest entries first.
 
+## Pooling without the dense membership matrix
+
+`downsample`/`upsample` inherited a formulation from the upstream repo that
+materialises a `B x L x S` membership matrix (one float per token per group per
+batch member) and contracts it against the hidden states. Groups are ragged, so
+a plain `mean` over an axis genuinely cannot express this — but the matrix is
+not needed either.
+
+- [x] **`downsample` scatter-adds** each position into its group's slot and
+      divides by the counts; **`upsample` is a gather**, since each position
+      reads exactly one slot. O(L) index memory instead of O(B·L·S): at
+      L=4096, B=8 the dense scratch matrix is 128 MiB against 0.125 MiB of
+      indices, and the ops are 58x (down) and 109x (up) faster. No measurable
+      difference at this toy's L=64 — this is what keeps the dense matrix from
+      being a wall at real sequence lengths.
+- [x] **The dense versions are kept verbatim** as `downsample_dense` /
+      `upsample_dense` and are now purely reference implementations, checked
+      against the fast ones over 200 randomised shapes, degenerate cases,
+      every dtype, the tokenizer's real boundary arrays, and underneath the
+      whole model with the primitives swapped out (`monkeypatch`). Upsampling
+      matches bit-exactly. Six mutations of the fast code each fail 3-31 tests.
+- [x] **bfloat16 pooling is now exact.** Summing first and dividing once
+      removes the `1/n` weights entirely, so the naive path performs the same
+      arithmetic as the cache's incremental mean. Naive-vs-cached in bfloat16
+      went from 1.95e-2 to **0.0** on the pooled path, and argmax agreement on
+      untrained models (the hard near-tie case) from 97.7% to 100%.
+- [x] **The dense reference counts boundaries in int64.** It used
+      `boundaries.cumsum(1)` in the boundary dtype, which in bfloat16 stops
+      being exact past 256 — the reference itself would have been wrong on long
+      sequences.
+
+Test suite: 81 tests (was 57). Benchmarks re-run on the new primitives.
+
 ## bfloat16 made usable
 
 Follow-up to the review fixes: reduced precision previously "ran" but was

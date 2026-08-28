@@ -9,6 +9,7 @@ reference. It follows `docs/kv_cache_plan.md` and the `AGENTS.md` TODOs.
 | Component | File |
 | --- | --- |
 | Toy tokenizer + causal `group()` | `tokenizer.py` |
+| Pooling primitives (+ dense references) | `shortening.py` |
 | Rule-based sequence generator | `generator.py` |
 | Three-level grouping visualization | `visualize.py` |
 | Three-level model (naive + KV-cached) | `hourglass.py` |
@@ -65,6 +66,21 @@ token transformer (pre)
 ```
 
 Pooling reuses the repo's dynamic-pooling primitives (`downsample`/`upsample`).
+Groups are ragged — different lengths, and a different count per batch member —
+so pooling is a *segment* mean, which no single `mean` over an axis expresses.
+The upstream repo did it by materialising a dense `B x L x S` membership matrix
+and contracting it; `downsample` now scatter-adds each position into its group's
+slot and divides by the counts, and `upsample` — where each position reads
+exactly one slot — is a plain gather. The dense versions are kept verbatim as
+`downsample_dense`/`upsample_dense` and the two are checked against each other
+(`tests/test_pooling_equivalence.py`), including underneath the whole model.
+
+That is O(L) index memory instead of O(B·L·S): the dense scratch matrix is
+128 MiB at L=4096, B=8, against 0.125 MiB of indices, and the ops are 58x
+(down) and 109x (up) faster there. At this toy's L=64 it makes no measurable
+difference; it is what would stop the dense matrix being a wall at real
+sequence lengths. Summing first and dividing once also removes the `1/n`
+weights entirely, which is what makes pooling exact in reduced precision.
 Each pooling step mean-pools completed groups, prepends a learned null group,
 and applies a LayerNorm; incomplete trailing groups are not passed down but
 survive through the residual path. Upsampling is causal: a token reads the most
@@ -157,6 +173,14 @@ All checks run with dropout disabled and deterministic `group()` boundaries.
 - **Contract violations are rejected** — non-binary or non-cumulative close
   events raise `ValueError` on both paths rather than being silently accepted
   (they previously produced a ~0.35 logit disagreement).
+- **Fast pooling == dense pooling** — `downsample`/`upsample` are checked
+  against the `*_dense` reference implementations over 200 randomised shapes,
+  degenerate cases (single position, no boundaries, every position a boundary),
+  every dtype, the tokenizer's real boundary arrays, and underneath the whole
+  model (`tests/test_pooling_equivalence.py`). Upsampling, being a gather,
+  matches *bit-exactly*. Six mutations of the fast implementations (inclusive
+  vs exclusive cumsum, keeping the incomplete trailing group, sum instead of
+  mean, off-by-one counts, narrow accumulation) each fail 3-31 tests.
 - **bfloat16 is validated, not merely runnable** — see §8.1. Logit comparisons
   use `inference.logit_tolerance(dtype, scale)` (`16 * eps * scale`) rather than
   a hard-coded `1e-5`, which is a float32 constant that says nothing about a
@@ -227,16 +251,16 @@ length L) versus `O(T^2)` for the cache.
 
 | tokens | naive (s) | cached (s) | speedup |
 | ---: | ---: | ---: | ---: |
-| 16  | 0.081 | 0.047 | 1.71x |
-| 32  | 0.175 | 0.092 | 1.91x |
-| 64  | 0.399 | 0.187 | 2.13x |
-| 96  | 0.519 | 0.219 | 2.37x |
-| 128 | 0.860 | 0.353 | 2.43x |
-| 192 | 1.584 | 0.506 | 3.13x |
-| 256 | 2.952 | 0.812 | 3.63x |
+| 16  | 0.101 | 0.065 | 1.57x |
+| 32  | 0.218 | 0.120 | 1.82x |
+| 64  | 0.436 | 0.251 | 1.74x |
+| 96  | 0.739 | 0.323 | 2.28x |
+| 128 | 0.958 | 0.390 | 2.46x |
+| 192 | 1.918 | 0.575 | 3.34x |
+| 256 | 3.186 | 0.846 | 3.77x |
 
-Fitting a power law over these lengths gives naive `~T^1.25` against cached
-`~T^0.99`. The measured exponents are far below the analytical `T^3`/`T^2`
+Fitting a power law over these lengths gives naive `~T^1.21` against cached
+`~T^0.90`. The measured exponents are far below the analytical `T^3`/`T^2`
 because at batch 1 with a 448k-parameter model on CPU, per-step Python and
 dispatch overhead — not attention arithmetic — is most of the runtime; the
 separation is nonetheless visible and widens with length.
@@ -252,17 +276,17 @@ record how ragged each run actually was.
 
 | tokens | naive (s) | cached (s) | speedup | distinct seqs | ragged padding |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 16  |  0.150 | 0.080 |  1.88x | 8/8 | 13% |
-| 32  |  0.348 | 0.141 |  2.47x | 8/8 |  8% |
-| 64  |  0.821 | 0.234 |  3.50x | 8/8 |  5% |
-| 96  |  1.715 | 0.442 |  3.88x | 8/8 |  4% |
-| 128 |  3.246 | 0.564 |  5.75x | 8/8 |  3% |
-| 192 |  9.184 | 0.794 | 11.57x | 8/8 |  3% |
-| 256 | 22.845 | 1.277 | 17.88x | 8/8 |  3% |
+| 16  |  0.147 | 0.083 |  1.78x | 8/8 | 13% |
+| 32  |  0.341 | 0.156 |  2.19x | 8/8 |  8% |
+| 64  |  0.943 | 0.290 |  3.25x | 8/8 |  5% |
+| 96  |  1.685 | 0.463 |  3.64x | 8/8 |  4% |
+| 128 |  3.637 | 0.750 |  4.85x | 8/8 |  3% |
+| 192 | 11.574 | 1.138 | 10.17x | 8/8 |  3% |
+| 256 | 24.956 | 1.650 | 15.13x | 8/8 |  3% |
 
 At batch 8 the arithmetic finally dominates the interpreter overhead and the
-asymptotic separation shows: naive fits `~T^1.77` while cached stays `~T^0.99`,
-for a 17.9x gap at 256 tokens. "Ragged padding" is the share of pooled-stack
+asymptotic separation shows: naive fits `~T^1.83` while cached stays `~T^1.09`,
+for a 15x gap at 256 tokens. "Ragged padding" is the share of pooled-stack
 cache slots a member holds only because some *other* member closed a group on
 that step; it is highest early on (13% at 16 tokens, while the seeded boundary
 offsets dominate) and settles around 3%, so the batched numbers are measured
@@ -281,11 +305,11 @@ in bfloat16. Both halve:
 | --- | ---: | ---: |
 | weights | 1751 KiB | 876 KiB |
 | KV cache (B=1, T=256) | 570 KiB | 285 KiB |
-| cached decode, 256 tokens | 0.812s | 1.326s |
+| cached decode, 256 tokens | 0.830s | 1.438s |
 
-The cache still beats full recompute inside bfloat16 (1.83x at 16 tokens to
-4.64x at 256), but bfloat16 is **1.6x slower than float32 in absolute terms** on
-this CPU: there are no native bfloat16 kernels here, so torch widens to float32
+The cache still beats full recompute inside bfloat16 — it is the same algorithm
+in a narrower dtype — but bfloat16 is **1.7x slower than float32 in absolute
+terms** on this CPU: there are no native bfloat16 kernels here, so torch widens to float32
 per operation and pays the conversions without the arithmetic saving. bfloat16
 is a memory trade on this machine, not a speed one; on hardware with bfloat16
 support the halved footprint comes without that penalty.
@@ -295,9 +319,15 @@ positions):
 
 | comparison | argmax agreement | max abs logit diff |
 | --- | ---: | ---: |
-| bfloat16 cached vs bfloat16 naive | **100.00%** | 0.31 |
-| bfloat16 naive vs float32 naive | 99.95% | 0.27 |
+| bfloat16 cached vs bfloat16 naive | **100.00%** | 0.05 |
+| bfloat16 naive vs float32 naive | 99.95% | 0.32 |
 | bfloat16 cached vs float32 naive | 99.95% | 0.32 |
+
+Since the scatter-add pooling reduces exactly the way the cache's incremental
+mean does — sum in float32, divide once, round once — the two paths perform the
+same arithmetic and agree to *zero* difference on the pooled representations
+themselves; what is left in the table is rounding inside the seven transformer
+stacks, which both paths share.
 
 The cached path picks the same token as the naive path at **every** position,
 and greedy decoding in bfloat16 — naive and cached — reproduces the float32

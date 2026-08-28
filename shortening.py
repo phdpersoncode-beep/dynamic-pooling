@@ -77,6 +77,8 @@ def level_boundaries(c1, c2, c3, dtype=torch.float, validate=True):
     return bnd1, bnd2, bnd3
 
 
+# `common` and `final` build the dense membership matrix and are used only by
+# the `*_dense` reference implementations at the bottom of this file.
 def final(foo,
           upsample):
     """
@@ -124,19 +126,21 @@ def common(boundaries, upsample=False):
         device=boundaries.device
     )
 
-    hh1 = boundaries.cumsum(1)
+    # Count boundaries in int64: a bfloat16 cumsum of 1s stops being exact past
+    # 256, which would silently corrupt the group indices on long sequences.
+    hh1 = boundaries.long().cumsum(1)
 
     if not upsample:
-        hh1 -= boundaries
+        hh1 = hh1 - boundaries.long()
 
     foo = tmp - hh1.unsqueeze(-1)
 
     return foo
 
 
-def downsample(boundaries, hidden, null_group):
+def downsample_dense(boundaries, hidden, null_group):
     """
-        Downsampling
+        Downsampling (reference implementation)
 
         - The first element of boundaries tensor is always 0 and doesn't matter
         - 1 closes the current group after this position
@@ -148,6 +152,10 @@ def downsample(boundaries, hidden, null_group):
             hidden: L x B x D
         Output:
             shortened_hidden: S x B x D
+
+    Materialises the full B x L x S membership matrix and contracts it against
+    the hidden states. Kept as the reference `downsample` is checked against;
+    see `downsample` for why that matrix is not needed.
     """
 
     foo = common(boundaries, upsample=False)  # B x L x S
@@ -167,6 +175,80 @@ def downsample(boundaries, hidden, null_group):
         return shortened_hidden
 
 
+def upsample_dense(boundaries, shortened_hidden):
+    """
+        Upsampling (reference implementation)
+
+        - The first element of boundaries tensor is always 0 and doesn't matter
+        - 1 closes the current group after this position
+        - The newly completed group becomes visible at its closing position
+
+        Input:
+            boundaries: B x L
+            shortened_hidden: S x B x D
+        Output:
+            upsampled_hidden: L x B x D
+
+    Materialises the full B x L x S matrix -- which for upsampling is one-hot in
+    S -- and contracts it. Kept as the reference `upsample` is checked against.
+    """
+
+    foo = common(boundaries, upsample=True)  # B x L x S
+    bar = final(foo, upsample=True)  # B x L x S
+
+    return torch.einsum(
+        'sbd,bls->lbd', shortened_hidden.to(bar.dtype), bar
+    ).to(shortened_hidden.dtype)
+
+
+def downsample(boundaries, hidden, null_group):
+    """
+        Downsampling
+
+        - The first element of boundaries tensor is always 0 and doesn't matter
+        - 1 closes the current group after this position
+        - We append an extra "null" group at the beginning
+        - We discard an incomplete trailing group
+
+        Input:
+            boundaries: B x L
+            hidden: L x B x D
+        Output:
+            shortened_hidden: S x B x D
+
+    Groups are ragged -- different lengths, and a different count per batch
+    member -- so this is a segment mean, not a mean over any axis. Each position
+    is scattered into its group's slot and the totals are divided by the counts,
+    which needs O(L) index memory instead of the reference's B x L x S
+    membership matrix (512 MiB at L=8192, B=8). Summing first and dividing once
+    also means there is no 1/n weight to round, so the group mean is exact in
+    reduced precision. `downsample_dense` is the equivalent reference; the tests
+    check the two against each other.
+    """
+    B = hidden.size(1)
+    n_segments = int(boundaries.sum(dim=-1).max().item())
+
+    if n_segments == 0:
+        return null_group.repeat(1, B, 1)
+
+    acc = accum_dtype(hidden.dtype)
+    # Group index of each position: boundaries closed strictly before it. The
+    # highest index is a member's trailing incomplete group, dropped below.
+    group = (boundaries.long().cumsum(1) - boundaries.long()).transpose(0, 1)
+    index = group.unsqueeze(-1).expand(-1, -1, hidden.size(2))
+
+    total = torch.zeros(n_segments + 1, B, hidden.size(2),
+                        device=hidden.device, dtype=acc)
+    total.scatter_add_(0, index, hidden.to(acc))
+    count = torch.zeros(n_segments + 1, B, device=hidden.device, dtype=acc)
+    count.scatter_add_(0, group, torch.ones_like(group, dtype=acc))
+
+    # A slot with no members (a member with fewer groups than the batch maximum)
+    # keeps its zero numerator, matching the reference.
+    mean = (total / count.clamp(min=1).unsqueeze(-1)).to(hidden.dtype)
+    return torch.cat([null_group.repeat(1, B, 1), mean[:n_segments]], dim=0)
+
+
 def upsample(boundaries, shortened_hidden):
     """
         Upsampling
@@ -180,11 +262,11 @@ def upsample(boundaries, shortened_hidden):
             shortened_hidden: S x B x D
         Output:
             upsampled_hidden: L x B x D
+
+    Each position reads exactly one group -- the most recently completed one --
+    so this is a gather, not a weighted sum, and it is exact in any dtype.
+    `upsample_dense` is the equivalent reference.
     """
-
-    foo = common(boundaries, upsample=True)  # B x L x S
-    bar = final(foo, upsample=True)  # B x L x S
-
-    return torch.einsum(
-        'sbd,bls->lbd', shortened_hidden.to(bar.dtype), bar
-    ).to(shortened_hidden.dtype)
+    index = boundaries.long().cumsum(1).transpose(0, 1)          # L x B
+    index = index.unsqueeze(-1).expand(-1, -1, shortened_hidden.size(2))
+    return shortened_hidden.gather(0, index)
