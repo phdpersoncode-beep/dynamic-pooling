@@ -102,11 +102,6 @@ def parse_args():
 
     boundaries = parser.add_argument_group('boundary creator')
     boundaries.add_argument('--boundaries_type', type=str)
-    boundaries.add_argument('--tokenizer_path', type=str)
-    boundaries.add_argument('--fixed_sf', type=int)
-    boundaries.add_argument('--spikes_left', type=int)
-    boundaries.add_argument('--temp', type=float)
-    boundaries.add_argument('--prior', type=float)
 
     opt = parser.add_argument_group('optimizer setup')
     opt.add_argument('--optim', default='adam', type=str, choices=['adam'],
@@ -170,11 +165,7 @@ def parse_args():
 
     assert args.boundaries_type in [
         "none",
-        "fixed",
         "whitespaces",
-        "unigram",
-        "entropy",
-        "gumbel",
     ]
 
     return args
@@ -420,8 +411,6 @@ def main():
     ###########################################################################
     boundary_kwargs = {
         'boundaries_type': args.boundaries_type,
-        'fixed_sf': args.fixed_sf,
-        'tokenizer_path': args.tokenizer_path,
     }
 
     corpus = get_lm_corpus(args.data,
@@ -481,12 +470,9 @@ def main():
     model = model.to(device)
 
     # Autoregressive test
-    if args.boundaries_type != 'gumbel':
-        # sampling in Gumbel depends on size, so it's hard to implement
-        # autoreg test
-        with torch.no_grad():
-            autoregressive_test(model, device)
-            args.autoreg = True
+    with torch.no_grad():
+        autoregressive_test(model, device)
+        args.autoreg = True
 
     # Wrap model with DDP
     if torch.distributed.is_initialized():

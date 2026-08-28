@@ -1,8 +1,6 @@
 torch==1.12.1+cu116
 numpy
-tokenizers
 pdbpp
-sentencepiece
 pyyaml
 datasets
 apache_beam

@@ -1,5 +1,81 @@
 import torch
 
+# Reduced-precision types whose reductions must accumulate in float32.
+_LOW_PRECISION = (torch.bfloat16, torch.float16)
+
+
+def accum_dtype(dtype):
+    """Dtype to accumulate pooling reductions in.
+
+    bfloat16 carries 8 mantissa bits, so both halves of a pooled mean round at
+    ~0.4%: a `1/n` weight is off by up to 0.2% (a *systematic* bias on every
+    pooled value) and a running sum re-rounds at every term. torch already
+    accumulates bfloat16 `sum`/`einsum` in float32 internally; doing the same
+    for the normalisation and for the cache's incremental means keeps pooling
+    accurate and, because both paths then reduce identically, keeps them
+    numerically equivalent. Storage stays in the model dtype -- only the
+    arithmetic is widened. A no-op for float32 and float64.
+    """
+    return torch.float32 if dtype in _LOW_PRECISION else dtype
+
+
+def check_closes(c1, c2, c3):
+    """Validate the close-event contract shared by the naive and cached paths.
+
+    Every close event must be binary and cumulative (`c3 <= c2 <= c1`): a
+    level-2 event also closes level 1, a level-3 event also closes levels 1 and
+    2. `Tokenizer.group` enforces this, but the model is also callable with
+    arrays built by hand or loaded from disk, and a violation makes the naive
+    and cached paths disagree silently (they build different pooled tensors),
+    so it is rejected here rather than propagated.
+    """
+    for name, c in (("c1", c1), ("c2", c2), ("c3", c3)):
+        if not bool(((c == 0) | (c == 1)).all()):
+            raise ValueError(f"{name} must be binary (0/1) close events")
+    if not bool((c2 <= c1).all()) or not bool((c3 <= c2).all()):
+        raise ValueError("close events must be cumulative: c3 <= c2 <= c1")
+
+
+def level_boundaries(c1, c2, c3, dtype=torch.float, validate=True):
+    """Derive the pooling-boundary array at each hierarchy level.
+
+    Inputs are causal close-events at token resolution (cumulative: c3<=c2<=c1):
+        c1, c2, c3: B x T  (1 where the position closes that level)
+
+    Returns (in `dtype`, which must match the hidden states they pool):
+        bnd1: B x T          boundaries used to pool tokens -> level 1
+        bnd2: B x (K1max+1)  boundaries used to pool level 1 -> level 2
+        bnd3: B x (K2max+1)  boundaries used to pool level 2 -> level 3
+
+    bnd2/bnd3 live at the *pooled* resolution and include the leading null-group
+    slot (index 0, always 0). bnd2[j] marks whether the j-th completed level-1
+    group also closed a level-2 group; bnd3[m] the analogous fact for level 2.
+    This is obtained by scattering the coarser close-event onto the slot each
+    boundary token occupies in the pooled tensor (cumsum of the finer event).
+    """
+    c1 = c1.long()
+    c2 = c2.long()
+    c3 = c3.long()
+    if validate:
+        check_closes(c1, c2, c3)
+    B = c1.size(0)
+
+    bnd1 = c1.to(dtype)
+
+    k1_max = int(c1.sum(dim=1).max().item())
+    slot1 = torch.cumsum(c1, dim=1) * c1  # boundary token -> its slot 1..K1; else 0
+    bnd2 = torch.zeros(B, k1_max + 1, device=c1.device, dtype=dtype)
+    bnd2.scatter_(1, slot1, (c2 * c1).to(dtype))
+    bnd2[:, 0] = 0
+
+    k2_max = int(c2.sum(dim=1).max().item())
+    slot2 = torch.cumsum(c2, dim=1) * c2
+    bnd3 = torch.zeros(B, k2_max + 1, device=c1.device, dtype=dtype)
+    bnd3.scatter_(1, slot2, (c3 * c2).to(dtype))
+    bnd3[:, 0] = 0
+
+    return bnd1, bnd2, bnd3
+
 
 def final(foo,
           upsample):
@@ -14,7 +90,14 @@ def final(foo,
 
     dim = 2 if upsample else 1
 
-    lel = lel / (lel.sum(dim=dim, keepdim=True) + 1e-9)
+    # Members per slot. An unused (padded) slot has none, and a zero numerator,
+    # so clamping the divisor to 1 leaves it zero -- while dividing by the exact
+    # count, rather than count + eps, makes pooling an exact mean. The eps was
+    # invisible in float32 but is the dominant naive-vs-cached difference in
+    # float64, where the cached path's running mean has no such factor.
+    # Normalise in the accumulation dtype: see `accum_dtype`.
+    lel = lel.to(accum_dtype(lel.dtype))
+    lel = lel / lel.sum(dim=dim, keepdim=True).clamp(min=1)
 
     return lel
 
@@ -22,7 +105,10 @@ def final(foo,
 def common(boundaries, upsample=False):
     boundaries = boundaries.clone()
 
-    n_segments = boundaries.sum(dim=-1).max().item()
+    # int(): `.item()` on float boundaries yields a Python float, which would
+    # make the arange below float32 and silently upcast the whole computation
+    # (breaking bfloat16/float16 hidden states).
+    n_segments = int(boundaries.sum(dim=-1).max().item())
 
     if upsample:
         n_segments += 1
@@ -53,9 +139,9 @@ def downsample(boundaries, hidden, null_group):
         Downsampling
 
         - The first element of boundaries tensor is always 0 and doesn't matter
-        - 1 starts a new group
+        - 1 closes the current group after this position
         - We append an extra "null" group at the beginning
-        - We discard last group because it won't be used (in terms of upsampling)
+        - We discard an incomplete trailing group
 
         Input:
             boundaries: B x L
@@ -71,7 +157,9 @@ def downsample(boundaries, hidden, null_group):
     else:
         bar = final(foo=foo, upsample=False)  # B x L x S
 
-        shortened_hidden = torch.einsum('lbd,bls->sbd', hidden, bar)
+        # Reduce in `bar`'s (accumulation) dtype, store in the hidden dtype.
+        shortened_hidden = torch.einsum(
+            'lbd,bls->sbd', hidden.to(bar.dtype), bar).to(hidden.dtype)
         shortened_hidden = torch.cat(
             [null_group.repeat(1, hidden.size(1), 1), shortened_hidden], dim=0
         )
@@ -84,8 +172,8 @@ def upsample(boundaries, shortened_hidden):
         Upsampling
 
         - The first element of boundaries tensor is always 0 and doesn't matter
-        - 1 starts a new group
-        - i-th group can be upsampled only to the tokens from (i+1)-th group, otherwise there's a leak
+        - 1 closes the current group after this position
+        - The newly completed group becomes visible at its closing position
 
         Input:
             boundaries: B x L
@@ -97,4 +185,6 @@ def upsample(boundaries, shortened_hidden):
     foo = common(boundaries, upsample=True)  # B x L x S
     bar = final(foo, upsample=True)  # B x L x S
 
-    return torch.einsum('sbd,bls->lbd', shortened_hidden, bar)
+    return torch.einsum(
+        'sbd,bls->lbd', shortened_hidden.to(bar.dtype), bar
+    ).to(shortened_hidden.dtype)
