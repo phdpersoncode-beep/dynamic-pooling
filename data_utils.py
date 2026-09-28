@@ -18,7 +18,7 @@ import random
 from torch.utils.data import DataLoader
 import utils
 from utils.vocabulary import Vocab
-from boundary_creator import get_boundary_creator, SPMBoundaries
+from boundary_creator import BoundaryCreator
 
 
 class LMOrderedIterator(object):
@@ -55,8 +55,10 @@ class LMOrderedIterator(object):
 
         # Create boundaries for the whole stream
         self.boundary_creator = boundary_creator
-        self.boundaries = boundary_creator.get_boundaries(txt=self.txt,
-                                                          tensor=self.data)
+        self.boundaries = None
+        if boundary_creator is not None:
+            self.boundaries = boundary_creator.get_boundaries(txt=self.txt,
+                                                              tensor=self.data)
 
         if self.boundaries is not None:
             self.boundaries = self.boundaries.bool().transpose(0, 1).contiguous()
@@ -144,12 +146,16 @@ class Corpus(object):
         self.vocab.build_vocab()
 
     def get_iterator(self, split, **kwargs):
-        assert ' ' in self.vocab.sym2idx
-        kwargs['whitespace_id'] = self.vocab.sym2idx[' ']
+        boundaries_type = kwargs.pop('boundaries_type')
+        boundary_creator = None
+
+        if boundaries_type == 'whitespaces':
+            assert ' ' in self.vocab.sym2idx
+            boundary_creator = BoundaryCreator(self.vocab.sym2idx[' '])
 
         return LMOrderedIterator(
             data=self.data[split],
-            boundary_creator=get_boundary_creator(**kwargs),
+            boundary_creator=boundary_creator,
             vocab=self.vocab,
             **kwargs
         )

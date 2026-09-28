@@ -1,0 +1,19 @@
+[project]
+name = "dynamic-pooling"
+version = "0.1.0"
+description = "Dynamic token pooling with a three-level KV-cached toy model"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.2.6",
+    "pytest>=9.1.1",
+    "pyyaml>=6.0.3",
+    "torch>=2.13.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cpu"

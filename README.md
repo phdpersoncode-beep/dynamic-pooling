@@ -9,28 +9,43 @@ Paper: [Efficient Transformers with Dynamic Token Pooling](https://arxiv.org/abs
 ## Environment:
 
 ```
-conda create -n dynamic-pooling python=3.8
-pip install -r requirements.txt
+uv sync
 ```
 
+## Three-level KV-cache experiment
+
+This branch adds a toy three-level hierarchy with both full-prefix and
+KV-cached inference. The implementation plan is in `docs/kv_cache_plan.md` and
+the results are summarized in `docs/report.md`.
+
+```bash
+uv run python generator.py
+uv run pytest
+uv run python train_toy.py
+uv run python demo_decode.py
+uv run python benchmark.py
+uv run python benchmark.py --dtype bfloat16   # halves weights and KV cache
+```
+
+The generated toy dataset is already checked in, so generation and training
+can be skipped when only testing decoding or the cache.
+
 ## Data:
-- Download & preprocess
-    - text8
-        - `bash scripts/get_text8.sh` 
-    - wiki40b 
-        - `bash scripts/get_wiki40b.sh $lang`
-        - where $lang is for example `vi`
-        - check [Link](https://www.tensorflow.org/datasets/catalog/wiki40b) for how the abbreviation of other languages
-        - Script first downloads wiki40b under `./data/wiki40b/$lang/`, and then applies our cleaners on top of it based on [text8](http://mattmahoney.net/dc/textdata) cleaning rules. Final training data sits under `./data/wiki40b/$lang/text8`. We found that for some systems there might occur some errors when downloading wiki40b using `datasets`. In this case after you manage to get the data just apply our cleaners on it.
-- Train Unigram
-    - `python tokenizer_data/train_tokenizer.py $vocab_size $dataset`
-    - `$vocab_size` is the integer target vocab size of Unigram
-    - `$dataset` is `text8` for text8, `wiki40b/$lang/text8` for wiki40b
+
+The original text8/wiki40b preprocessing assets are not part of this feature
+branch. The new experiment uses the rule-based toy data from `generator.py`.
 
 ## Training:
-- Training by default starts with a simple test that checks the autoregressive property of a model. We support grad accummulation, distributed training, half precision training.
 
-- To run training use:
+- **Toy three-level model** (this branch): `uv run python train_toy.py`, which
+  reads the checked-in dataset under `tokenizer_data/` — see the section above.
+
+- **Original text8/wiki40b model**: `train.py` and `configs/` are preserved and
+  still work, but the download and preprocessing scripts they depend on were
+  removed with the other boundary predictors, so `data/text8` has to be
+  supplied by hand (see the upstream repository). Training starts with a test
+  that checks the autoregressive property of the model, and supports gradient
+  accumulation, distributed training and half precision:
 ```
 C=configs/whitespaces.yaml GPUS= bash scripts/run_exp.sh
 ```
@@ -44,20 +59,12 @@ Repository is a fork from: https://github.com/NVIDIA/DeepLearningExamples/tree/m
 We decided to fork from the Nvidia implementation of Transformer XL, because Transformer XL is strong and established baseline in Language Modelling, and Nvidia code is well-optimised for the current hardware.
 
 - ./configs/ 
-    - we've prepared configs for all models presented in our work, i.e., Vanilla, Fixed, Entropy, Unigram, Whitespaces, Gumbel
-- ./tokenizer_data/ 
-    - Pretrained tokenizers using HuggingFace/Sentencepiece library for all datasets we've tested in the paper. You can train them yourself by running:
-        - ```python ./tokenizer_data/train_tokenizer.py $ARGS```
-        - Args are defined in the `./tokenizer_data/train_tokenizer.py`
+    - Contains configs for the no-pooling baseline and whitespace boundaries.
 - ./cleaners/
     - Implementation of preprocessing rules applied to raw `wiki40b` dataesets and `cc-100` dataset
-- Boundary Predictor:
-    - {Vanilla, Fixed, Whitespaces}
-        - These approaches do not need a boundary predictor. Boundaries are extracted from the data itself in the `boundary_creator.py`, then used in the DataLoader.
-    - {Unigram}
-        - Segmentation based on Unigram needs a Boundary Predictor, because Unigram itself is not autoregressive. We teach the Boundary Predictor module defined in `hourglass.py` to predict the Unigram segmentation. Boundary Predictor is autoregressive, which makes the whole model autoregressive as well. Unigram segmentation is extracted in `boundary_creator.py`.
-    - {Entropy, Gumbel}
-        - These approaches are end-to-end and use the main model to train Boundary Predictor. Entire logic is implemented in the `hourglass.py`.
+- Boundaries:
+    - Whitespace boundaries are extracted in `boundary_creator.py`, then supplied through the data loader.
+    - The no-pooling baseline does not create boundaries.
 
 ## Issues:
 
