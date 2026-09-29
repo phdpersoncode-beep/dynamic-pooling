@@ -502,8 +502,9 @@ class HourglassLM(nn.Module):
         qlen = core_input.size(0)
         dec_attn_mask = torch.triu(
             core_input.new_ones(qlen, qlen), diagonal=1).bool()
-        pos_seq = torch.arange(qlen - 1, -1, -1.0,
-                               device=core_input.device, dtype=core_input.dtype)
+        # Integer indices align ascending cached and descending naive tables.
+        pos_seq = torch.arange(qlen - 1, -1, -1,
+                               device=core_input.device).to(core_input.dtype)
         pos_emb = self.drop(self.pos_emb(pos_seq))
         out = core_input
         for layer in layers:
@@ -604,7 +605,7 @@ class HourglassLM(nn.Module):
         if state['pos_cap'] >= need:
             return
         cap = max(need, 2 * state['pos_cap'], 8)
-        pos = torch.arange(cap, device=state['device'], dtype=state['dtype'])
+        pos = torch.arange(cap, device=state['device']).to(state['dtype'])
         table = self.pos_emb(pos).squeeze(1)              # cap x C
         with torch.no_grad():
             for name in STACK_NAMES:
@@ -775,8 +776,8 @@ class HourglassLM(nn.Module):
     def step(self, state, token_id, c1, c2, c3):
         """Advance one token for a batch-size-1 state. Returns logits 1 x 1 x V."""
         dev = self.r_w_bias.device
-        t = lambda v: torch.tensor([int(v)], device=dev)
-        return self.step_batched(state, t(token_id), t(c1), t(c2), t(c3))
+        t = lambda v: torch.tensor([v], device=dev)
+        return self.step_batched(state, t(int(token_id)), t(c1), t(c2), t(c3))
 
     def cached_forward(self, data, c1, c2, c3):
         """Batched cached path restricted to T x 1 (kept for existing callers)."""

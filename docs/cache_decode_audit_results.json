@@ -1,0 +1,36 @@
+{
+  "python": "3.10.21",
+  "torch": "2.13.0+cpu",
+  "cpu_capability": "AVX512",
+  "cuda": false,
+  "runs": [
+    {
+      "dtype": "torch.float32",
+      "steps": 300,
+      "max_error": 6.4373016357421875e-06,
+      "matches": true,
+      "checkpoint": "toy"
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "steps": 300,
+      "max_error": 0.234375,
+      "matches": true,
+      "checkpoint": "toy"
+    },
+    {
+      "dtype": "torch.float32",
+      "steps": 300,
+      "max_error": 1.4543533325195312e-05,
+      "matches": true,
+      "checkpoint": "overfit32"
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "steps": 300,
+      "max_error": 0.0,
+      "matches": true,
+      "checkpoint": "overfit32"
+    }
+  ]
+}

@@ -17,6 +17,8 @@ uv sync
 This branch adds a toy three-level hierarchy with both full-prefix and
 KV-cached inference. The implementation plan is in `docs/kv_cache_plan.md` and
 the results are summarized in `docs/report.md`.
+See [the independent PR #1 cache audit](docs/pr1_cache_audit.md) for fixes,
+verification scope, remaining work, and interruption recovery instructions.
 
 ```bash
 uv run python generator.py
@@ -82,3 +84,9 @@ In case of any questions or problems with the codebase feel free to raise a Gith
       primaryClass={cs.CL}
 }
 ```
+
+## Review and next work
+
+- [Open items](TODO.md)
+- [Current task state and resume instructions](docs/WORK_STATE.md)
+- [Testing and sequence formulation proposal — awaiting alignment](docs/testing_and_formulation_proposal.md)
