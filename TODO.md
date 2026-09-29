@@ -7,6 +7,7 @@ Status and resume instructions: [docs/WORK_STATE.md](docs/WORK_STATE.md).
 - [ ] P1: Align on the rigorous test plan and versioned sequence semantics.
 - [ ] T1: Build an independent grouping/visibility oracle and adversarial sequences.
 - [ ] T2: Test causality, every-prefix states/KV, batching, cache growth, and resume.
+- [ ] T3: Validate chunk boundaries, save/reload, and fresh-process continuation.
 - [ ] N1: Resolve bfloat16 decision divergence; validate supported devices/dtypes.
 - [ ] D1: Add structured hierarchical tasks and held-out structural generalization.
 - [ ] C1: Make reference tests a CI gate and preserve failure fixtures.

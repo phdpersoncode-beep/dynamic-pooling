@@ -2,6 +2,8 @@
 
 Updated: 2026-09-29. Branch: `review/pr1-cache-correctness`.
 Base PR: #1 (`feat/first-kv-cache`). Do not merge without user direction.
+Published review: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2).
+GitHub now holds the reviewed code, TODOs, evidence, proposal, and this handoff.
 
 ## Authorization and current task
 
