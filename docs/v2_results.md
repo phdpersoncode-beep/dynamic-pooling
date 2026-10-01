@@ -164,5 +164,8 @@ limitation, especially for threshold-level floating-point differences.
 
 CUDA, cross-device snapshot migration, stochastic-decoding equivalence, optimized
 attention and production cache serialization are untested. The known bfloat16
-fallback mismatch remains a strict expected failure in the test suite. CI workflow
-execution on GitHub is separate from the locally retained test log.
+fallback mismatch remains a backend-dependent expected failure in the test suite.
+GitHub's CPU passed this fixture (153 other fast tests also passed), which made
+its original strict-XPASS marker fail CI. The marker now permits XPASS while
+retaining the unchanged assertion; this is not a numerical fix or a universal
+BF16 guarantee. CPU/build metadata logging was added for subsequent CI runs.
