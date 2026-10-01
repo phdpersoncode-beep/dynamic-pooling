@@ -1,6 +1,6 @@
 # Architecture, cache, and sequence validation proposal
 
-Status: **PROPOSED — awaiting user alignment; do not execute yet.**
+Status: **APPROVED 2026-10-01, with original sentinel pooling retained.**
 Date: 2026-09-29. Task P1. Published alongside the completed PR #1 review.
 
 ## 1. What the model currently does
@@ -56,8 +56,8 @@ checkpoint. Never reinterpret old checkpoints under new semantics.
 | Complete vs partial | Complete examples are closed trees ending in explicit b3, then EOS. Prefixes can stop anywhere and remain open. | Tests complete hierarchy without inventing closures at truncation. |
 | EOS | Stop marker only; no implicit flush. In strict complete-example validation, early EOS is invalid. v1 stays permissive. | A b3 before EOS makes the final aggregate available when predicting EOS. |
 | Empty groups | Valid structured data requires at least one payload per leaf and real children per parent. | Consecutive markers are useful adversarial v1 inputs, not the intended task distribution. |
-| Synthetic inputs | Keep null/BOS context available to attention, but exclude synthetic null and SOS/EOS from pooled member counts. Closing boundary tokens remain members. | Separates context/sentinels from actual children. |
-| Pool weighting | Keep equal weighting of real child representations at each level. | An object hierarchy should not accidentally become token-count-weighted. |
+| Synthetic inputs | Preserve original pooling: SOS is a first-leaf member; the processed lower null is a first-parent member. EOS is an ordinary unclosed tail, with no implicit flush. Closing boundary tokens remain members. | User decision: preserve original dynamic pooling behavior. |
+| Pool weighting | Keep equal weighting of all included child representations at each level. | An object hierarchy should not accidentally become token-count-weighted. |
 | Group rules | Default task suite uses the literal boundary lookup. Custom causal rules get separately named/versioned fixtures. | A token named b2 need not close anything under arbitrary custom rules. |
 | Sampling | Generate a tree first, then linearize it; sample lengths/branching explicitly. | Covers shapes intentionally instead of relying on rare random events. |
 
@@ -92,7 +92,7 @@ invalid grammar / permissive stress input. Expectations are independently built.
 | Cascading close | SOS x1 b3; main example above. | All three updates happen at the correct token, in correct order. |
 | Mixed closures | SOS x1 b1 x2 b1 x3 b2 x4 b3. | Lower levels advance while higher levels hold their last state. |
 | Degenerate v1 | SOS b3 b3 b2 b1 EOS; no boundary at all. | Explicit marker-only groups and null-only coarse paths. |
-| Unequal groups | Short-long-short leaf sizes; unequal children per parent. | Wrong count, token-weighted vs child-weighted means, null contamination. |
+| Unequal groups | Short-long-short leaf sizes; unequal children per parent. | Wrong count, token-weighted vs child-weighted means, first-parent null inclusion. |
 | Same prefix, different suffix | Shared prefix followed by no closure vs b3 vs a long tree. | Future closures must not change previous logits, K/V, or group visibility. |
 | Same counts, different timing | Closures early vs late, with equal totals. | Counters alone cannot validate membership or relative position. |
 | Asynchronous batch | One member always closes L3; one never closes; others alternate L1/L2. | Padding, member independence, compact ordinal distances. |
@@ -229,16 +229,11 @@ bfloat16 expected failure. Approved v2 gets its own gates. An expected failure
 is never counted as successful parity. Performance changes start only after
 these gates; benchmark actual grown caches and prefill/decode separately.
 
-## 6. Approval requested
+## 6. Approved execution
 
-A. Preserve v1; add the proposed v2 closed-tree grammar, explicit final b3, and
-   synthetic-null/SOS/EOS exclusion from pooling. Keep boundary inclusion and
-   equal-child means.
-B. Use float32 as the initial supported correctness mode, float64 for diagnosis;
-   retain bfloat16 as explicitly experimental until its mismatch is resolved.
-C. Execute in order: independent semantics -> state/cache/streaming -> numerical
-   matrix -> small structured-learning tasks and controls. No attention-kernel
-   migration or large training during this phase.
-
-If A is rejected, T1/T2/T3 can still run against an explicitly documented v1
-contract. Record the user's actual decisions in WORK_STATE.md before starting.
+On 2026-10-01 the user approved v2 and regular pushes, with one correction:
+retain original sentinel pooling. The proposed exclusion is superseded. V2 is a
+data/task contract; it does not change the architecture or reinterpret v1 weights.
+Float32 is the initial reference, float64 diagnoses algebra, and bfloat16 remains
+experimental. Execute T1/T2/T3, numerical checks, then small structured tasks and
+controls. No kernel migration or large training run in this phase.

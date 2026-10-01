@@ -1,23 +1,24 @@
 # Work state — read this first when resuming
 
-Updated: 2026-09-29. Branch: `review/pr1-cache-correctness`.
+Updated: 2026-10-01. Branch: `review/pr1-cache-correctness`.
 Base PR: #1 (`feat/first-kv-cache`). Do not merge without user direction.
-Published review: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2).
-GitHub now holds the reviewed code, TODOs, evidence, proposal, and this handoff.
+Published work: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2).
 
 ## Authorization and current task
 
-The user explicitly authorized pushing the reviewed fixes and a draft fix PR,
-requested concise TODOs, and requested a rigorous test/formulation proposal.
-**New experiments, training, or semantic changes wait for user alignment.**
-A request to "continue" resumes the current phase; it does not approve undecided
-formulation changes. Push completed, authorized milestones to preserve progress.
+The user approved implementation of the v2 plan and regular pushes. Preserve the
+original pooling semantics: SOS belongs to the first L1 group; transformed nulls
+belong to the first parent means; closing markers belong to groups; EOS does not
+flush. Verified against `origin/main:shortening.py` (commit `1e6f360`): membership
+uses cumsum minus the current boundary, without any sentinel exclusion.
+V2 versions the grammar/data/tasks, not the architecture. Leave old checkpoints
+unchanged. Float32 reference, float64 diagnosis; bfloat16 remains experimental.
 
-Current phase: **awaiting user alignment** on A/B/C in
-[testing_and_formulation_proposal.md](testing_and_formulation_proposal.md).
-The proposal is complete; none of its new experiments or semantic changes have
-been executed. Publishing this proposal does not mean the user approved it.
-Task IDs and outstanding work are in `../TODO.md`.
+Current phase: T1 independent semantics and v2 tree generator, in progress.
+Then T2 full-state/causality, T3 saved continuation, numerical checks, D1 small
+structured learning and controls, C1 reproducible CI, and an intuitive tree/cache
+guide. See `testing_and_formulation_proposal.md` and `../TODO.md`.
+A request to "continue" resumes this approved plan without asking again.
 
 ## Completed evidence
 
@@ -34,8 +35,8 @@ Task IDs and outstanding work are in `../TODO.md`.
 1. Clone/fetch this branch. Read `AGENTS.md`, this file, TODO.md, and the proposal.
 2. Inspect `git status`, latest commits, and retained test results. Do not rerun
    successful work solely because a chat was interrupted.
-3. If awaiting alignment, present unresolved decisions; do not execute that plan.
-4. Once approved, implement one task ID at a time. Record decisions and results
+3. Resume the first unfinished task above; preserve successful evidence.
+4. Implement one task ID at a time. Record decisions and results
    here; commit and push at each meaningful milestone and before stopping.
 5. A failing test must retain its shared prefix, seed, checkpoint, dtype/backend,
    first differing layer/state, and reproduction command. Keep partial run results.
