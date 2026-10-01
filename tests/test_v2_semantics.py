@@ -76,13 +76,15 @@ def test_learning_splits_have_disjoint_sources_and_correct_copy_roles():
     for task in ('l1_repeat', 'l2_copy', 'l3_copy'):
         datasets = splits(task)
         ids = [{e['source_id'] for e in datasets[name]} for name in ('train', 'validation', 'test')]
+        train_symbols = {s for e in datasets['train'] for s in e['symbols']}
+        assert {s for e in datasets['test'] for s in e['symbols']} <= train_symbols
         assert not (ids[0] & ids[1] or ids[0] & ids[2] or ids[1] & ids[2])
         for examples in datasets.values():
             for e in examples:
                 validate(e['symbols'])
                 copied = [s for s, r in zip(e['symbols'], e['roles']) if r == 'copy']
                 if task == 'l1_repeat':
-                    assert copied and set(copied) == {e['symbols'][1]}
+                    assert copied == sum([leaf[1:] for leaf in e['tree'][0][0]], [])
                 else:
                     source = e['tree'][0][0][0] if task == 'l2_copy' else sum(e['tree'][0][0], [])
                     assert copied == source

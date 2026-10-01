@@ -78,8 +78,8 @@ def task_example(task, seed, motif_length=2, distractors=1, n_x=16, distractor_l
     noise = lambda: [f"x{rng.randrange(n_x)}" for _ in range(distractor_length or motif_length)]
     source = motif()
     if task == "l1_repeat":
-        source = source[:1]
-        tree = [[[source * (motif_length + 2)]]]
+        source = source[:2]
+        tree = [[[[symbol] * (motif_length + 2) for symbol in source]]]
     elif task == "l2_copy":
         tree = [[[source] + [noise() for _ in range(distractors)] + [source.copy()]]]
     elif task == "l3_copy":
@@ -93,7 +93,8 @@ def task_example(task, seed, motif_length=2, distractors=1, n_x=16, distractor_l
              for s in symbols]
     if task == "l1_repeat":
         for i in range(2, len(symbols) - 2):
-            roles[i] = "copy"
+            if is_payload(symbols[i]) and is_payload(symbols[i - 1]):
+                roles[i] = "copy"
     else:
         begin = max(i for i, s in enumerate(symbols) if s == ("b1" if task == "l2_copy" else "b2")) + 1
         for i in range(begin, len(symbols) - 2):

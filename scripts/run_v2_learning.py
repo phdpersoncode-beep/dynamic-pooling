@@ -5,6 +5,7 @@ A completed case is skipped only when its code/config/environment manifest and
 checkpoint hash match. Interrupted training resumes from optimizer + RNG state.
 """
 import argparse
+import copy
 import gzip
 import json
 import os
@@ -42,7 +43,7 @@ def splits(task):
     for split, count in [('train', 32), ('validation', 16), ('test', 16)]:
         examples = []
         while len(examples) < count:
-            ex = task_example(task, cursor, n_x=64)
+            ex = task_example(task, cursor, n_x=16)
             cursor += 1
             if ex['source_id'] in seen:
                 continue
@@ -53,7 +54,11 @@ def splits(task):
                      ('unequal_lengths', {'motif_length': 3, 'distractor_length': 1})]:
         if task == 'l1_repeat' and name != 'longer_source':
             continue
-        result[name] = [task_example(task, ex['seed'], n_x=64, **kw) for ex in result['test']]
+        result[name] = [task_example(task, ex['seed'], n_x=16, **kw) for ex in result['test']]
+    train_symbols = {s for e in result['train'] for s in e['symbols']}
+    for split in ('validation', 'test'):
+        if not {s for e in result[split] for s in e['symbols']} <= train_symbols:
+            raise ValueError('held-out vocabulary would confound structural generalization')
     return result
 
 
@@ -85,29 +90,45 @@ def parity(model, examples, tok):
     data, c = tensors(examples, tok)
     cached = model.cached_forward_batched(data, *c)
     max_abs, max_rel, min_margin, max_ratio = 0., 0., float('inf'), 0.
+    failures = []
     for end in range(1, len(data)+1):
         naive = model(data[:end], *(x[:end] for x in c))[-1]
         delta = (cached[end-1] - naive).abs()
         bound = logit_tolerance(naive.dtype, naive.abs().max())
-        torch.testing.assert_close(cached[end-1], naive, rtol=0, atol=bound)
-        if not torch.equal(cached[end-1].argmax(-1), naive.argmax(-1)):
-            raise AssertionError(f'greedy mismatch at prefix {end}')
+        if delta.max().item() > bound or not torch.equal(cached[end-1].argmax(-1), naive.argmax(-1)):
+            failures.append({'prefix': end, 'max_abs': delta.max().item(), 'bound': bound,
+                             'greedy_matches': torch.equal(cached[end-1].argmax(-1), naive.argmax(-1))})
         top = naive.topk(2).values
         max_abs = max(max_abs, delta.max().item())
         max_rel = max(max_rel, (delta / naive.abs().clamp(min=1e-6)).max().item())
         max_ratio = max(max_ratio, delta.max().item() / bound)
         min_margin = min(min_margin, (top[:, 0] - top[:, 1]).min().item())
+    diagnosis = None
+    if failures:
+        diagnostic = copy.deepcopy(model).double()
+        double_cached = diagnostic.cached_forward_batched(data, *c)
+        double_errors = []
+        for failure in failures:
+            end = failure['prefix']
+            expected = diagnostic(data[:end], *(x[:end] for x in c))[-1]
+            double_errors.append((double_cached[end-1]-expected).abs().max().item())
+        diagnosis = {'same_weights_float64_max_abs': max(double_errors)}
     return {'prefixes': len(data), 'members': data.shape[1], 'max_abs': max_abs,
             'max_relative_clamped_1e_6': max_rel, 'max_fraction_of_tolerance': max_ratio,
-            'min_top_two_margin': min_margin, 'greedy_matches': True}
+            'min_top_two_margin': min_margin, 'greedy_matches': all(f['greedy_matches'] for f in failures),
+            'passes': not failures, 'failures': failures, 'diagnosis': diagnosis}
 
 
 @torch.no_grad()
 def rollout(model, examples, tok, check_cache):
     """Generate the whole final copy region, including its internal boundaries."""
     data, c = tensors(examples, tok)
-    start = examples[0]['roles'].index('copy')
-    assert all(e['roles'].index('copy') == start for e in examples)
+    def begin(example):
+        if example['task'] == 'l1_repeat':
+            return max(i for i, role in enumerate(example['roles']) if role == 'source') + 1
+        return example['roles'].index('copy')
+    start = begin(examples[0])
+    assert all(begin(e) == start for e in examples)
     prefix = data[:start].clone()
     state = model.init_state_batched(len(examples)) if check_cache else None
     if check_cache:
@@ -154,10 +175,11 @@ def source_hash():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--steps', type=int, default=200)
-    ap.add_argument('--output', type=Path, default=Path('docs/v2_learning'))
+    ap.add_argument('--output', type=Path, default=Path('docs/v2_learning_final'))
+    ap.add_argument('--checkpoint-root', type=Path, default=Path('checkpoints/v2_final'))
     args = ap.parse_args()
     out = args.output; out.mkdir(parents=True, exist_ok=True)
-    manifest = {'contract': CONTRACT, 'code_hash': source_hash(), 'config': CONFIG,
+    manifest = {'task_suite': 'seen-vocabulary-two-leaf-repeat-v2', 'contract': CONTRACT, 'code_hash': source_hash(), 'config': CONFIG,
                 'steps': args.steps, 'seeds': [0, 1, 2], 'torch': str(torch.__version__),
                 'dtype': 'float32', 'device': 'cpu', 'mkldnn': torch.backends.mkldnn.enabled,
                 'threads': torch.get_num_threads(), 'git_commit': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
@@ -179,7 +201,7 @@ def main():
         (f'{task}-{kind}-{seed}', task, kind, seed)
         for task in ('l1_repeat', 'l2_copy', 'l3_copy') for kind in ('hierarchy', 'flat') for seed in range(3)]
     for case, task, kind, seed in cases:
-        ckpt_path = Path('checkpoints/v2')/(case+'.pt.gz')
+        ckpt_path = args.checkpoint_root/(case+'.pt.gz')
         if case in done:
             ckpt = read_checkpoint(ckpt_path)
             model = build(kind, seed); model.load_state_dict(ckpt['state_dict'])
@@ -264,7 +286,10 @@ def main():
         print(json.dumps({'completed': case, 'loss': losses[-1], 'test': result['metrics']['test']['copy_exact_match_teacher_forced']}), flush=True)
         if case == 'tiny_overfit':
             print('Tiny learning gate passed; starting the three-seed task/control matrix.', flush=True)
-    (out/'status.json').write_text(json.dumps({'completed': len(cases), 'remaining': 0})+'\n')
+    results = [json.loads(line) for line in journal.read_text().splitlines()]
+    failed = sum(any(not v['passes'] for v in r['parity'].values()) for r in results)
+    (out/'status.json').write_text(json.dumps({'completed': len(cases), 'remaining': 0,
+                                           'numerical_gate_failures': failed})+'\n')
 
 
 if __name__ == '__main__':

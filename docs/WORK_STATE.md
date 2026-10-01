@@ -1,62 +1,81 @@
-# Work state — read this first when resuming
+# Work state — read first when resuming
 
 Updated: 2026-10-01. Branch: `review/pr1-cache-correctness`.
-Base PR: #1 (`feat/first-kv-cache`). Do not merge without user direction.
-Published work: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2).
+Published work: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2),
+targeting PR #1 (`feat/first-kv-cache`). Do not merge without user direction.
 
-## Authorization and current task
+## Authorization and semantics
 
-The user approved implementation of the v2 plan and regular pushes. Preserve the
-original pooling semantics: SOS belongs to the first L1 group; transformed nulls
-belong to the first parent means; closing markers belong to groups; EOS does not
-flush. Verified against `origin/main:shortening.py` (commit `1e6f360`): membership
-uses cumsum minus the current boundary, without any sentinel exclusion.
-V2 versions the grammar/data/tasks, not the architecture. Leave old checkpoints
-unchanged. Float32 reference, float64 diagnosis; bfloat16 remains experimental.
+V2 implementation and regular pushes are approved. The user explicitly retained
+original pooling: SOS belongs to the first L1 group; processed lower nulls belong
+to first-parent means; closing markers belong to groups; EOS does not flush.
+Verified against original `shortening.py` at `1e6f360`. V2 changes data/tasks, not
+this architecture contract. Old `toy.pt` and `overfit32.pt` are unchanged.
+The user additionally requested longer sequences with interspersed b1/b2/b3.
 
-Current phase: D1 pilot completed (19 cases, three seeds + flat controls), refining
-splits before final conclusions. `scripts/run_v2_learning.py` resumes by case ID
-and checks code/config/environment plus weight hashes. Pilot results are in
-`docs/v2_learning/`, weights in `checkpoints/v2/`. Tiny overfit passed; 9,371
-trained prefix/member comparisons passed, max FP32 logit error 1.5021e-5.
-Held-out exact copies all failed. L1's disjoint single-symbol source split also
-withheld vocabulary: this confounds copying with unseen output symbols. Next:
-keep this pilot evidence; improve L1 to disjoint two-leaf trees with seen symbols,
-ensure source/test vocabulary coverage for all tasks, and rerun matched budgets.
-The tree/cache guide is drafted at docs/v2_trees_and_cache.md; results page pending.
-Full suite before latest additions: 140 pass + 1 known BF16 xfail. Subsequently
-13 extra rule/edge/backend cases and the split/role check passed.
-Then T2 full-state/causality, T3 saved continuation, numerical checks, D1 small
-structured learning and controls, C1 reproducible CI, and an intuitive tree/cache
-guide. See `testing_and_formulation_proposal.md` and `../TODO.md`.
-A request to "continue" resumes this approved plan without asking again.
+## Current outcome
 
-## Completed evidence
+Implementation and agreed small experiments are complete; final publication is
+being finished. Read `v2_results.md` for conclusions and `v2_trees_and_cache.md`
+for exact trees, means, null membership, token timing and cache examples.
 
-- R1/R2: three confirmed fixes; naive forward remains independent.
-- 105 passing tests and one strict expected failure on CPU.
-- Known bfloat16 CPU fallback divergence: prefix 165, naive b1 vs cached EOS.
-- Widening attention arithmetic was tried and reverted: it broke a different case.
-- Details: `pr1_cache_audit.md`, `cache_review_test_results.txt`,
-  `cache_known_bfloat16_mismatch.json`, `cache_attention_experiment.json`.
-- Checkpoints and weights are unchanged. No GPU validation has occurred.
+- Full local suite: **154 passed, 1 known BF16 xfail**, 58.03 s on resumed CPU runtime.
+- T1/T2/T3: independent oracle, 4096 schedules, internal state, per-layer K/V,
+  causality gradients, ragged batches, growth and fresh-process saved continuation.
+- T4: 8 long cases (512/1024/2048, two trained checkpoints, two members).
+  All tested greedy choices match; **5 FP32 cases fail the old logit bound**.
+  Maximum selected-prefix error 1.4782e-5; real K/V error 3.9339e-6.
+  Unique failing histories in float64 give at most 1.5099e-14.
+- D1: pilot plus corrected 19-case suite. Final suite uses seen vocabulary and
+  disjoint trees/motifs. L1 exact copy averages 91.7%; L2 2.1%; L3 0% (hierarchy).
+  Flat controls are similarly limited. 10,139 final trained prefix/member checks
+  and generated copy regions match greedy decisions. One model violates the
+  FP32 logit bound in three splits; errors reduce to ~1e-14 in float64.
+- No tolerance widening or attention-arithmetic workaround was accepted.
+- No CUDA validation. Hosted CI execution is not verified.
 
-## Resume procedure
+## Durable artifacts and commands
 
-1. Clone/fetch this branch. Read `AGENTS.md`, this file, TODO.md, and the proposal.
-2. Inspect `git status`, latest commits, and retained test results. Do not rerun
-   successful work solely because a chat was interrupted.
-3. Resume the first unfinished task above; preserve successful evidence.
-4. Implement one task ID at a time. Record decisions and results
-   here; commit and push at each meaningful milestone and before stopping.
-5. A failing test must retain its shared prefix, seed, checkpoint, dtype/backend,
-   first differing layer/state, and reproduction command. Keep partial run results.
+- `docs/v2_learning/`, `checkpoints/v2/`: original pilot (unseen-vocabulary confound).
+  Its executable source is the published pilot commit `a54d1b7`.
+- `docs/v2_learning_final/`, `checkpoints/v2_final/`: corrected complete matrix.
+  `manifest.json` includes source hash, seeds, settings and recorded starting SHA;
+  `results.jsonl` has per-case metrics/failures; `status.json` has counts.
+- `docs/v2_long/`: exact long token arrays, checkpoint hashes, errors and diagnosis.
+- `docs/v2_float32_minimized.json`: short historical failure did not reproduce in
+  the standalone replay after runtime replacement. No threshold was changed.
+  Long deletion minimization was stopped; the full failure histories remain.
+- `docs/v2_test_results.txt`: final local test evidence.
+- An intermediate interrupted learning attempt was superseded by the final run;
+  scratch-only copies are under ignored `experiments/v2_interrupted/`.
 
 ```bash
-git clone -b review/pr1-cache-correctness https://github.com/phdpersoncode-beep/dynamic-pooling.git
-cd dynamic-pooling
-uv sync
+uv sync --locked
 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 uv run pytest -q
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 uv run python -m scripts.run_v2_learning
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 uv run python -m scripts.audit_v2_long
 ```
 
-The full suite command is for verification when needed, not a mandatory restart.
+Do not rerun completed cases simply because the chat was interrupted. The learning
+runner validates manifests and checkpoint hashes, skips completed cases, and saves
+optimizer/RNG state every 50 steps during a case. It records numerical failures
+and continues: read status.json. The long runner exits nonzero for retained failures.
+`source_hash()` in the learning runner matches the final manifest; source hashes
+are more precise than starting SHAs when work was published after a run.
+
+## Next work
+
+The concise open list is `../TODO.md`. Priority: N2/N1 numerical contract, then D2
+L2/L3 learning and length generalization. No evidence yet warrants a hierarchy
+necessity or speed claim. Keep the naive implementation as oracle. New cue tokens
+or architecture changes need a new design decision; they were not introduced here.
+
+## Publishing/recovery
+
+Latest verified remote before the final-results commit: `a54d1b7` (pilot and guide).
+The preceding correctness milestone is `99f70b5`. An earlier publication stopped
+because automatic approval review hit a usage limit, not because it deemed the
+action unsafe; the pilot publication subsequently succeeded after resumption.
+Check the current remote SHA and working tree before continuing publication.
+Use non-forced updates and verify local/remote trees. Do not merge PR #2.
+A "continue" request resumes unfinished authorized work without asking again.

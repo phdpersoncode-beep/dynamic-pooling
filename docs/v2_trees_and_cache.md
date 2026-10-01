@@ -212,7 +212,34 @@ For project recovery, read `docs/WORK_STATE.md` and `TODO.md`. Learning runs rec
 case IDs, executable-source hashes, dataset hashes, seeds, and per-case results;
 training checkpoints include optimizer and RNG state until a case completes.
 
-## 8. What the experiments can establish
+## 8. Longer sequences with interspersed closes
+
+A small version of the long stress pattern is:
+
+```text
+SOS x1 b1 x2 b2 x3 b3 x4 b1 x5 b2 x6 b3 EOS
+```
+
+Its exact model groups are:
+
+| Level | Completed groups in order (null slot is 0) |
+|---|---|
+| L1 | `[SOS,x1,b1]`; `[x2,b2]`; `[x3,b3]`; `[x4,b1]`; `[x5,b2]`; `[x6,b3]` |
+| L2 | child slots `[0,1,2]`; `[3]`; `[4,5]`; `[6]` |
+| L3 | child slots `[0,1,2]`; `[3,4]` |
+
+The L2/L3 entries denote transformed child vectors. Only their first groups
+include a lower-level null. The second b3 creates a second top-level group;
+it does not modify the first one.
+
+The executed long tests extend this to 512, 1,024 and 2,048 tokens, with uneven
+leaf sizes, many b1/b2/b3 markers and an open tail. A 2,048-token member has
+411/166/63 completed L1/L2/L3 groups. Both trained checkpoints retain matching
+greedy choices, but several float32 logit differences exceed the old numerical
+bound. These are reported as failures, not absorbed into a wider tolerance.
+
+## 9. What the experiments can establish
+
 
 The independent oracle checks the naive model's grouping semantics first.
 Cache tests then check internal state and per-layer K/V as well as predictions.

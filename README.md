@@ -90,3 +90,14 @@ In case of any questions or problems with the codebase feel free to raise a Gith
 - [Open items](TODO.md)
 - [Current task state and resume instructions](docs/WORK_STATE.md)
 - [Testing and sequence formulation proposal — awaiting alignment](docs/testing_and_formulation_proposal.md)
+
+## V2 validation
+
+- [Exact trees, original sentinel pooling and KV-cache examples](docs/v2_trees_and_cache.md)
+- [Results and numerical/learning limitations](docs/v2_results.md)
+- [Open items](TODO.md) and [resume state](docs/WORK_STATE.md)
+
+The naive full-prefix model remains the oracle. Expanded tests retain matching
+greedy choices on the new FP32 corpus, but some logit differences exceed the old
+bound; the earlier BF16 greedy mismatch remains open. See the results before
+interpreting cache parity as a universal precision guarantee.

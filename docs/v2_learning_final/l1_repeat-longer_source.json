@@ -1,0 +1,928 @@
+{
+  "contract": {
+    "version": 2,
+    "grammar": "nonempty-tree-v2",
+    "rule": "literal-cumulative-v1",
+    "pooling": "original-inclusive-equal-child-v1",
+    "eos": "stop-without-flush"
+  },
+  "tokenizer": {
+    "n_x": 256,
+    "group_rule": null
+  },
+  "examples": [
+    {
+      "symbols": [
+        "SOS",
+        "x6",
+        "x6",
+        "x6",
+        "x6",
+        "x6",
+        "b1",
+        "x14",
+        "x14",
+        "x14",
+        "x14",
+        "x14",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "33f93861bcbbef2368212d203705c62327e8d3a7dfef7fc470600f98b8d7533c",
+      "tree": [
+        [
+          [
+            [
+              "x6",
+              "x6",
+              "x6",
+              "x6",
+              "x6"
+            ],
+            [
+              "x14",
+              "x14",
+              "x14",
+              "x14",
+              "x14"
+            ]
+          ]
+        ]
+      ],
+      "seed": 53,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x4",
+        "x4",
+        "x4",
+        "x4",
+        "x4",
+        "b1",
+        "x14",
+        "x14",
+        "x14",
+        "x14",
+        "x14",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "6f1cbf8016d1e47db49e0ef4f3d207c401e5ad67cabe48f10add375e9e8682d6",
+      "tree": [
+        [
+          [
+            [
+              "x4",
+              "x4",
+              "x4",
+              "x4",
+              "x4"
+            ],
+            [
+              "x14",
+              "x14",
+              "x14",
+              "x14",
+              "x14"
+            ]
+          ]
+        ]
+      ],
+      "seed": 54,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x1",
+        "x1",
+        "x1",
+        "x1",
+        "x1",
+        "b1",
+        "x11",
+        "x11",
+        "x11",
+        "x11",
+        "x11",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "5d68457b70eaa75a9ab3ea6dd0f573d9b1ae49545c021acfd3b91a877b9ded51",
+      "tree": [
+        [
+          [
+            [
+              "x1",
+              "x1",
+              "x1",
+              "x1",
+              "x1"
+            ],
+            [
+              "x11",
+              "x11",
+              "x11",
+              "x11",
+              "x11"
+            ]
+          ]
+        ]
+      ],
+      "seed": 57,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x7",
+        "x7",
+        "x7",
+        "x7",
+        "x7",
+        "b1",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "d09db0d5a1a0f776b99d628dbde2747e4d6f17cf5a4f9ae9de97e86a2e2466b9",
+      "tree": [
+        [
+          [
+            [
+              "x7",
+              "x7",
+              "x7",
+              "x7",
+              "x7"
+            ],
+            [
+              "x2",
+              "x2",
+              "x2",
+              "x2",
+              "x2"
+            ]
+          ]
+        ]
+      ],
+      "seed": 59,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "b1",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "de245b0e7ea67e446455b4a63cfc88d1c7b80519cfc6760ec8a7a49fa9ef6425",
+      "tree": [
+        [
+          [
+            [
+              "x9",
+              "x9",
+              "x9",
+              "x9",
+              "x9"
+            ],
+            [
+              "x9",
+              "x9",
+              "x9",
+              "x9",
+              "x9"
+            ]
+          ]
+        ]
+      ],
+      "seed": 60,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x15",
+        "x15",
+        "x15",
+        "x15",
+        "x15",
+        "b1",
+        "x5",
+        "x5",
+        "x5",
+        "x5",
+        "x5",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "0463c4f4cb464cb4d75d07de8b167808186da86fc8a81b55919dff2a1126f702",
+      "tree": [
+        [
+          [
+            [
+              "x15",
+              "x15",
+              "x15",
+              "x15",
+              "x15"
+            ],
+            [
+              "x5",
+              "x5",
+              "x5",
+              "x5",
+              "x5"
+            ]
+          ]
+        ]
+      ],
+      "seed": 61,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x5",
+        "x5",
+        "x5",
+        "x5",
+        "x5",
+        "b1",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "3b7ac90385a52e70837d321fac7862485656715f4c569b065b6c82cd08e81cf8",
+      "tree": [
+        [
+          [
+            [
+              "x5",
+              "x5",
+              "x5",
+              "x5",
+              "x5"
+            ],
+            [
+              "x2",
+              "x2",
+              "x2",
+              "x2",
+              "x2"
+            ]
+          ]
+        ]
+      ],
+      "seed": 62,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x15",
+        "x15",
+        "x15",
+        "x15",
+        "x15",
+        "b1",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "84247040aba828dc1e6d072992933e5c6a0ba801dec2beff5dc358830aa7852c",
+      "tree": [
+        [
+          [
+            [
+              "x15",
+              "x15",
+              "x15",
+              "x15",
+              "x15"
+            ],
+            [
+              "x3",
+              "x3",
+              "x3",
+              "x3",
+              "x3"
+            ]
+          ]
+        ]
+      ],
+      "seed": 64,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "b1",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "2c4ffa440beecadca45627c12efdae5fcf13767177a44cef76d1adeec3a6a360",
+      "tree": [
+        [
+          [
+            [
+              "x2",
+              "x2",
+              "x2",
+              "x2",
+              "x2"
+            ],
+            [
+              "x9",
+              "x9",
+              "x9",
+              "x9",
+              "x9"
+            ]
+          ]
+        ]
+      ],
+      "seed": 66,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "b1",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "904ae319e866c2ef25e9876e1f5f868d6b3e653cfd641156ecb5c7bbfbcdbba8",
+      "tree": [
+        [
+          [
+            [
+              "x2",
+              "x2",
+              "x2",
+              "x2",
+              "x2"
+            ],
+            [
+              "x3",
+              "x3",
+              "x3",
+              "x3",
+              "x3"
+            ]
+          ]
+        ]
+      ],
+      "seed": 67,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x14",
+        "x14",
+        "x14",
+        "x14",
+        "x14",
+        "b1",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "bf80d79b910eab761c05deccffbea0b997219bd46d0b78d4da5c7dc3798d9d85",
+      "tree": [
+        [
+          [
+            [
+              "x14",
+              "x14",
+              "x14",
+              "x14",
+              "x14"
+            ],
+            [
+              "x3",
+              "x3",
+              "x3",
+              "x3",
+              "x3"
+            ]
+          ]
+        ]
+      ],
+      "seed": 68,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "b1",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "x9",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "e90a274bd1597a16850f52e40b53ea32300e10e0140c46366edbca12782a9fd9",
+      "tree": [
+        [
+          [
+            [
+              "x3",
+              "x3",
+              "x3",
+              "x3",
+              "x3"
+            ],
+            [
+              "x9",
+              "x9",
+              "x9",
+              "x9",
+              "x9"
+            ]
+          ]
+        ]
+      ],
+      "seed": 70,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x10",
+        "x10",
+        "x10",
+        "x10",
+        "x10",
+        "b1",
+        "x0",
+        "x0",
+        "x0",
+        "x0",
+        "x0",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "60945d6bf6bf17c3a87a3c9aaf69e5e8b0108a90540c47e6a069cbf880ca20cc",
+      "tree": [
+        [
+          [
+            [
+              "x10",
+              "x10",
+              "x10",
+              "x10",
+              "x10"
+            ],
+            [
+              "x0",
+              "x0",
+              "x0",
+              "x0",
+              "x0"
+            ]
+          ]
+        ]
+      ],
+      "seed": 71,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "x2",
+        "b1",
+        "x5",
+        "x5",
+        "x5",
+        "x5",
+        "x5",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "71d74cf430152d4237aabbee8d60b683b7613b1325979e59720801662263ef0d",
+      "tree": [
+        [
+          [
+            [
+              "x2",
+              "x2",
+              "x2",
+              "x2",
+              "x2"
+            ],
+            [
+              "x5",
+              "x5",
+              "x5",
+              "x5",
+              "x5"
+            ]
+          ]
+        ]
+      ],
+      "seed": 72,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x8",
+        "x8",
+        "x8",
+        "x8",
+        "x8",
+        "b1",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "06b852c6365cb9f51e763991ab5abb175098ebaf691aa26cd59b3e4e8a347e70",
+      "tree": [
+        [
+          [
+            [
+              "x8",
+              "x8",
+              "x8",
+              "x8",
+              "x8"
+            ],
+            [
+              "x3",
+              "x3",
+              "x3",
+              "x3",
+              "x3"
+            ]
+          ]
+        ]
+      ],
+      "seed": 73,
+      "task": "l1_repeat"
+    },
+    {
+      "symbols": [
+        "SOS",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "x3",
+        "b1",
+        "x10",
+        "x10",
+        "x10",
+        "x10",
+        "x10",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "source",
+        "copy",
+        "copy",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "cecf0650eb5b1e9ea54f4bb0840d5cec0bb0a65dcbc3503fbef0a731f6b669fe",
+      "tree": [
+        [
+          [
+            [
+              "x3",
+              "x3",
+              "x3",
+              "x3",
+              "x3"
+            ],
+            [
+              "x10",
+              "x10",
+              "x10",
+              "x10",
+              "x10"
+            ]
+          ]
+        ]
+      ],
+      "seed": 74,
+      "task": "l1_repeat"
+    }
+  ],
+  "sha256": "fb43d61e767490cf3c2a93d8b39a0eadc2e85344761275e4b8f995c698e786dc"
+}

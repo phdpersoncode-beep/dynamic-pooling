@@ -1,0 +1,30 @@
+[
+  {
+    "source_case": "docs/v2_long/overfit32-1024-torch.float32.json",
+    "prefix": 17,
+    "max_float64_error": 1.509903313490213e-14,
+    "greedy_matches": true,
+    "passes_1e_11": true
+  },
+  {
+    "source_case": "docs/v2_long/toy-2048-torch.float32.json",
+    "prefix": 2039,
+    "max_float64_error": 1.1546319456101628e-14,
+    "greedy_matches": true,
+    "passes_1e_11": true
+  },
+  {
+    "source_case": "docs/v2_long/toy-512-torch.float32.json",
+    "prefix": 462,
+    "max_float64_error": 1.0658141036401503e-14,
+    "greedy_matches": true,
+    "passes_1e_11": true
+  },
+  {
+    "source_case": "docs/v2_long/toy-512-torch.float32.json",
+    "prefix": 506,
+    "max_float64_error": 1.7763568394002505e-15,
+    "greedy_matches": true,
+    "passes_1e_11": true
+  }
+]
