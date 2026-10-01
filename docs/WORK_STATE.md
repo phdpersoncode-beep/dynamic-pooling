@@ -34,7 +34,8 @@ for exact trees, means, null membership, token timing and cache examples.
 - No CUDA validation. Hosted CI ran: all 153 ordinary fast tests passed, but the
   BF16 counterexample unexpectedly passed too, triggering its old strict-XPASS
   marker. The fixture now allows XPASS across CPU backends without removing its
-  assertion or changing tolerances; CI rerun pending. Runtime metadata logging added.
+  assertion or changing tolerances. Updated CI passed both fast and exhaustive
+  steps at `9111b76`, run `36922557779`, job `110571909717`. Runtime metadata is logged.
 
 ## Durable artifacts and commands
 

@@ -12,7 +12,7 @@ Resume from [docs/WORK_STATE.md](docs/WORK_STATE.md). Results: [docs/v2_results.
 - [ ] N1: Resolve known bfloat16 greedy-decision divergence.
 - [ ] N2: Establish justified FP32 error bounds/stability; investigate retained bound violations without hiding them.
 - [ ] D2: Improve L2/L3 held-out copying; vary observable lengths and predeclare training-budget comparisons.
-- [ ] C2: Verify hosted CI; capture CPU/ISA/BLAS details and strengthen failure minimization/replay tooling.
+- [ ] C2: Add CPU/ISA/BLAS details to experiment manifests and strengthen failure minimization/replay (hosted CI now passes).
 - [ ] G1: Device-aware entry points and CUDA parity.
 - [ ] O1: Compatible optimized attention, ragged storage and prefill after numerical gates.
 - [ ] B1: Actual peak memory and separate prefill/decode benchmarks.

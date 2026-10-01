@@ -169,3 +169,7 @@ GitHub's CPU passed this fixture (153 other fast tests also passed), which made
 its original strict-XPASS marker fail CI. The marker now permits XPASS while
 retaining the unchanged assertion; this is not a numerical fix or a universal
 BF16 guarantee. CPU/build metadata logging was added for subsequent CI runs.
+
+Hosted CI at code commit `9111b7692f24eaa3942aa6d93a21f51be45668bf` passed both
+regular and exhaustive test steps: [run 36922557779](https://github.com/phdpersoncode-beep/dynamic-pooling/actions/runs/36922557779).
+This does not change the retained extended-experiment failures above.
