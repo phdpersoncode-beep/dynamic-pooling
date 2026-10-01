@@ -1,6 +1,6 @@
 # Work state — read first when resuming
 
-Updated: 2026-10-01. Branch: `review/pr1-cache-correctness`.
+Updated: 2026-10-02. Branch: `review/pr1-cache-correctness`.
 Published work: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2),
 targeting PR #1 (`feat/first-kv-cache`). Do not merge without user direction.
 
@@ -12,6 +12,24 @@ to first-parent means; closing markers belong to groups; EOS does not flush.
 Verified against original `shortening.py` at `1e6f360`. V2 changes data/tasks, not
 this architecture contract. Old `toy.pt` and `overfit32.pt` are unchanged.
 The user additionally requested longer sequences with interspersed b1/b2/b3.
+
+## Active continuation: inference reliability and efficiency
+
+The user authorized continuing TODOs and pushing to this same branch. The v2
+results below remain historical evidence. Current focus: explicit numerical
+contract, shared/device-aware decoding, runtime metadata, then phase-separated
+performance and actual process memory measurements. See `inference_precision.md`.
+
+- Simplified single/batched cached decoding; default rule uses a device lookup;
+  avoid an unused final forward. Model loading accepts explicit device placement.
+- Added measured-error/top-two-margin diagnostics without widening thresholds.
+- Validation so far: 163 passed, 1 known BF16 xfail, 1 CUDA skip (CPU-only runtime).
+- `scripts/benchmark_phases.py` runs identical mixed-boundary prefixes and
+  continuations in isolated naive/cached workers, separates prefill/decode,
+  records process peak RSS and runtime/build/CPU details, and saves cases atomically.
+- NEXT: complete benchmark matrix, replay retained numerical failures with runtime
+  metadata, interpret bottlenecks, document results, push. Do not rerun the old
+  learning matrix or change architecture/cue semantics as part of this milestone.
 
 ## Current outcome
 

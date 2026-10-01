@@ -101,3 +101,5 @@ The naive full-prefix model remains the oracle. Expanded tests retain matching
 greedy choices on the new FP32 corpus, but some logit differences exceed the old
 bound; the earlier BF16 greedy mismatch remains open. See the results before
 interpreting cache parity as a universal precision guarantee.
+
+Inference usage and numerical limits: [docs/inference_precision.md](docs/inference_precision.md).

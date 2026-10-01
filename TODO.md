@@ -16,3 +16,9 @@ Resume from [docs/WORK_STATE.md](docs/WORK_STATE.md). Results: [docs/v2_results.
 - [ ] G1: Device-aware entry points and CUDA parity.
 - [ ] O1: Compatible optimized attention, ragged storage and prefill after numerical gates.
 - [ ] B1: Actual peak memory and separate prefill/decode benchmarks.
+
+Current continuation:
+- [x] Shared single/batched decoder, default-rule fast path, skip unused last step.
+- [x] Explicit model device placement and measured-error/margin diagnostics.
+- [ ] Finish separate prefill/decode and isolated process-memory measurements.
+- [ ] Replay retained numerical failures with CPU/build metadata; retain failures.
