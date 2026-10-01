@@ -1,0 +1,14 @@
+name: Reference correctness
+on: [push, pull_request]
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run pytest -q -m 'not extended'
+      - run: uv run pytest -q -m extended

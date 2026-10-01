@@ -14,7 +14,14 @@ uses cumsum minus the current boundary, without any sentinel exclusion.
 V2 versions the grammar/data/tasks, not the architecture. Leave old checkpoints
 unchanged. Float32 reference, float64 diagnosis; bfloat16 remains experimental.
 
-Current phase: T1 independent semantics and v2 tree generator, in progress.
+Current phase: T1/T2/T3 initial implementation passes; extending rule/edge checks, then D1.
+New files: hierarchy_v2.py, cache_session.py, tests/v2_oracle.py and test_v2_*.py.
+Full suite: 140 passed + 1 known BF16 xfail (57.72 s CPU).
+Then 13 additional rule/capacity/backend checks passed (30 cache tests total), including all 4096 six-event schedules and a
+fresh-process snapshot restore. Pooling/attention algebra is unchanged. Fixed
+custom-rule fractional truncation and fail-before-mutation shape validation.
+CI workflow added (execution on GitHub not yet verified). Next: implement resumable
+small learning experiments and run manifests, then docs/v2_trees_and_cache.md.
 Then T2 full-state/causality, T3 saved continuation, numerical checks, D1 small
 structured learning and controls, C1 reproducible CI, and an intuitive tree/cache
 guide. See `testing_and_formulation_proposal.md` and `../TODO.md`.

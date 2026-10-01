@@ -515,6 +515,8 @@ class HourglassLM(nn.Module):
     def forward(self, data, c1, c2, c3, target=None):
         """data, c1, c2, c3: T x B. Returns logits (T x B x V), or (logits,
         loss T x B) when target is given."""
+        if data.ndim != 2 or 0 in data.shape or any(c.shape != data.shape for c in (c1, c2, c3)):
+            raise ValueError("expected nonempty matching time x batch tensors")
         tgt_len, bsz = data.size(0), data.size(1)
         hidden = self.drop(self.word_emb(data))
 
@@ -703,6 +705,10 @@ class HourglassLM(nn.Module):
         B = state['bsz']
         dev = self.r_w_bias.device
         dt, acc = state['dtype'], state['accum_dtype']
+        if any(x.shape != (B,) for x in (tokens, c1, c2, c3)):
+            raise ValueError("tokens and closes must have shape (batch,)")
+        if active is not None and (active.shape != (B,) or active.dtype != torch.bool):
+            raise ValueError("active must be a boolean tensor of shape (batch,)")
         check_closes(c1, c2, c3)
         if active is None:
             active = torch.ones(B, dtype=torch.bool, device=dev)
