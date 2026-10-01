@@ -1,0 +1,33 @@
+{
+  "contract": {
+    "version": 2,
+    "grammar": "nonempty-tree-v2",
+    "rule": "literal-cumulative-v1",
+    "pooling": "original-inclusive-equal-child-v1",
+    "eos": "stop-without-flush"
+  },
+  "code_hash": "3cee768a2e5e6337a06989e94925443679b97a612b192240c2df8e3bb81d4b6d",
+  "config": {
+    "n_head": 2,
+    "d_model": 16,
+    "d_head": 8,
+    "d_inner": 32,
+    "dropout": 0.0,
+    "dropatt": 0.0
+  },
+  "steps": 200,
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "torch": "2.13.0+cpu",
+  "dtype": "float32",
+  "device": "cpu",
+  "mkldnn": true,
+  "threads": 1,
+  "git_commit": "99f70b528088752cd118a62e5646a22069822f3c",
+  "cuda_tested": false,
+  "tolerance": "16 * eps * max(1, max_abs_logit)",
+  "case_count": 19
+}

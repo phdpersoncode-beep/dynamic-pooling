@@ -14,14 +14,18 @@ uses cumsum minus the current boundary, without any sentinel exclusion.
 V2 versions the grammar/data/tasks, not the architecture. Leave old checkpoints
 unchanged. Float32 reference, float64 diagnosis; bfloat16 remains experimental.
 
-Current phase: T1/T2/T3 initial implementation passes; extending rule/edge checks, then D1.
-New files: hierarchy_v2.py, cache_session.py, tests/v2_oracle.py and test_v2_*.py.
-Full suite: 140 passed + 1 known BF16 xfail (57.72 s CPU).
-Then 13 additional rule/capacity/backend checks passed (30 cache tests total), including all 4096 six-event schedules and a
-fresh-process snapshot restore. Pooling/attention algebra is unchanged. Fixed
-custom-rule fractional truncation and fail-before-mutation shape validation.
-CI workflow added (execution on GitHub not yet verified). Next: implement resumable
-small learning experiments and run manifests, then docs/v2_trees_and_cache.md.
+Current phase: D1 pilot completed (19 cases, three seeds + flat controls), refining
+splits before final conclusions. `scripts/run_v2_learning.py` resumes by case ID
+and checks code/config/environment plus weight hashes. Pilot results are in
+`docs/v2_learning/`, weights in `checkpoints/v2/`. Tiny overfit passed; 9,371
+trained prefix/member comparisons passed, max FP32 logit error 1.5021e-5.
+Held-out exact copies all failed. L1's disjoint single-symbol source split also
+withheld vocabulary: this confounds copying with unseen output symbols. Next:
+keep this pilot evidence; improve L1 to disjoint two-leaf trees with seen symbols,
+ensure source/test vocabulary coverage for all tasks, and rerun matched budgets.
+The tree/cache guide is drafted at docs/v2_trees_and_cache.md; results page pending.
+Full suite before latest additions: 140 pass + 1 known BF16 xfail. Subsequently
+13 extra rule/edge/backend cases and the split/role check passed.
 Then T2 full-state/causality, T3 saved continuation, numerical checks, D1 small
 structured learning and controls, C1 reproducible CI, and an intuitive tree/cache
 guide. See `testing_and_formulation_proposal.md` and `../TODO.md`.
