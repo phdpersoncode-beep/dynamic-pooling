@@ -23,8 +23,16 @@ sum P@V in post.0. With identical probabilities/values, row/full outputs differ
 Linear-only, score-only or softmax-only widening does not. Cached-only P@V widening
 against the unchanged oracle gives 9.06e-6. No production fix has been applied.
 
-NEXT: finish independent control/reproducer scripts and findings document, record
-limits (one FP32 fixture; BF16 not yet localized), and push the debug branch.
+Diagnostic checkpoint published at `1040bd0`. Findings and reproduction commands:
+`docs/numerics_debug/README.md`. Source/runtime/fixture/checkpoint identity is recorded
+in arithmetic.json; completed interventions are skipped. All controls reproduced
+through scripts. Naive 2039-vs-2048 control is bit-identical on shared positions.
+No production files changed relative to `232f2f5`.
+
+NEXT: targeted accumulation-strategy experiments using the isolated P@V case,
+then check any candidate against the unchanged naive oracle across all fixtures.
+BF16 needs its own operation trace. Do not claim this diagnosis covers all models
+or make a production precision change from a single successful intervention.
 
 ## Authorization and semantics
 

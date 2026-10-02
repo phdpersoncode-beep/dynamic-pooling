@@ -103,7 +103,10 @@ def main():
     out = Path(args.output); out.mkdir(exist_ok=True, parents=True)
     identity = {'runtime':runtime_info(), 'case':args.case,
                 'case_sha256':hashlib.sha256(Path(args.case).read_bytes()).hexdigest(),
-                'checkpoint_sha256':hashlib.sha256(Path(case['checkpoint']).read_bytes()).hexdigest()}
+                'checkpoint_sha256':hashlib.sha256(Path(case['checkpoint']).read_bytes()).hexdigest(),
+                'source_hashes': {p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in
+                    ['scripts/debug_attention_arithmetic.py', 'hourglass.py', 'shortening.py',
+                     'inference.py', 'tokenizer.py', 'numerics.py', 'scripts/runtime_info.py']}}
     path = out/'arithmetic.json'
     result = {**identity, 'attention_probes':[], 'interventions':{}}
     if path.exists():

@@ -18,3 +18,6 @@ Resume from [docs/WORK_STATE.md](docs/WORK_STATE.md). Latest: [inference progres
 - [x] O0: Optional parallel prefill; real K/V, open-state, custom-rule and restart checks.
 - [ ] O1: Compatible optimized attention, sustained compact ragged storage and chunked prefill.
 - [x] B1: Separate prefill/decode and isolated process peak-memory measurements on CPU.
+
+Debug branch findings: [FP32 numerical diagnosis](docs/numerics_debug/README.md).
+Dominant retained-case error isolated to attention weighted sums; production fix and BF16 diagnosis remain open.

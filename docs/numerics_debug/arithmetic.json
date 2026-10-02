@@ -288,5 +288,14 @@
     }
   },
   "case_sha256": "8f4a386f5f2485123f6fa4b18ecfb0d0a3e2ad0efa6c85b7ef82935d32560909",
-  "checkpoint_sha256": "2d7c4148c2e2e7e0bf3d2a152acfb8e57d8b33f3ee86a1e2007becbf99eae808"
+  "checkpoint_sha256": "2d7c4148c2e2e7e0bf3d2a152acfb8e57d8b33f3ee86a1e2007becbf99eae808",
+  "source_hashes": {
+    "scripts/debug_attention_arithmetic.py": "078668431a6b12c57603c883c6b520d45b20fff3f68cd4f90dd78aaaa2720c01",
+    "hourglass.py": "7cbb2a7389d348dfd94236249db032040068aaa8121bb668e462b29a9ac65b7a",
+    "shortening.py": "a59cf80f21231af1448b0421c761fac3b96c41bc04a4ea1fc002cd7dc47a0fa9",
+    "inference.py": "88f3b799b6a9847a9752aa925a5de590828a1d65073b7cfb4ed8f0ae9010ba5d",
+    "tokenizer.py": "f7237d703b25efb0092eb6ac771c70b1473fc73784742fc839c818bfb1599a19",
+    "numerics.py": "0670750c25e84d9e2a253855ed5e10d741fd8bf8942e0a99affb3b550b8f02df",
+    "scripts/runtime_info.py": "8b1513a4731d6a722f00f204e2b50597f199d73d3a291623a4587c9e87f7039b"
+  }
 }
