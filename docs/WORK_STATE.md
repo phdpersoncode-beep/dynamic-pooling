@@ -1,8 +1,30 @@
 # Work state — read first when resuming
 
-Updated: 2026-10-02. Branch: `review/pr1-cache-correctness`.
+Updated: 2026-10-02. Branch: `debug/fp32-cache-numerics` (from `232f2f5`).
 Published work: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2),
 targeting PR #1 (`feat/first-kv-cache`). Do not merge without user direction.
+
+## Active numerical investigation
+
+User requested a separate debug branch to establish why FP32 outputs differ.
+The review branch is preserved. Remote debug branch starts at `232f2f5`.
+Do not treat the numerical hypothesis as a proven root cause before interventions.
+
+Plan: trace retained toy prefix 2,039; compare each operation's naive/cached inputs
+and outputs; replay modules on identical inputs in full-length and one-row shapes;
+then selectively change precision/operation execution to test causal contributions.
+The diagnostic is `scripts/debug_cache_numerics.py`; outputs go to
+`docs/numerics_debug/`. The production model math and tolerances are unchanged.
+
+Trace and eight interventions are complete. Identical-input linear projections
+already differ (~7e-7); the dominant long-prefix effect is the attention weighted
+sum P@V in post.0. With identical probabilities/values, row/full outputs differ
+~2e-5. Widening only P@V in both paths reduces final error 6.72e-5 -> 1.43e-6.
+Linear-only, score-only or softmax-only widening does not. Cached-only P@V widening
+against the unchanged oracle gives 9.06e-6. No production fix has been applied.
+
+NEXT: finish independent control/reproducer scripts and findings document, record
+limits (one FP32 fixture; BF16 not yet localized), and push the debug branch.
 
 ## Authorization and semantics
 

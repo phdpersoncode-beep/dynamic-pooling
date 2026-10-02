@@ -1,0 +1,24 @@
+{
+  "case": "docs/inference_progress/numerics/retained-714ff45be2b34b02.json",
+  "intervention": "weighted64 on cached path only; original FP32 naive oracle retained",
+  "last": {
+    "rows": 2,
+    "max_abs_error": 9.059906005859375e-06,
+    "historical_threshold": 9.426647011423483e-06,
+    "within_historical_threshold": true,
+    "greedy_mismatches": 0,
+    "min_naive_margin": 2.5499627590179443,
+    "rows_with_margin_over_twice_error": 2,
+    "rows_without_margin_certificate": 0
+  },
+  "all": {
+    "rows": 4078,
+    "max_abs_error": 1.239776611328125e-05,
+    "historical_threshold": 2.0675710402429104e-05,
+    "within_historical_threshold": true,
+    "greedy_mismatches": 0,
+    "min_naive_margin": 0.0007064342498779297,
+    "rows_with_margin_over_twice_error": 4078,
+    "rows_without_margin_certificate": 0
+  }
+}
