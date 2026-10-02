@@ -1,0 +1,65 @@
+{
+  "contract": {
+    "version": 2,
+    "grammar": "nonempty-tree-v2",
+    "rule": "literal-cumulative-v1",
+    "pooling": "original-inclusive-equal-child-v1",
+    "eos": "stop-without-flush"
+  },
+  "tokenizer": {
+    "n_x": 256,
+    "group_rule": null
+  },
+  "examples": [
+    {
+      "symbols": [
+        "SOS",
+        "x49",
+        "x53",
+        "b1",
+        "x5",
+        "x33",
+        "b1",
+        "x49",
+        "x53",
+        "b3",
+        "EOS"
+      ],
+      "roles": [
+        "source",
+        "source",
+        "source",
+        "boundary",
+        "source",
+        "source",
+        "boundary",
+        "copy",
+        "copy",
+        "boundary",
+        "eos"
+      ],
+      "source_id": "ddc414ff27d399b636a861e24b770509863e2cf1a2ecb6e248e96e751769839c",
+      "tree": [
+        [
+          [
+            [
+              "x49",
+              "x53"
+            ],
+            [
+              "x5",
+              "x33"
+            ],
+            [
+              "x49",
+              "x53"
+            ]
+          ]
+        ]
+      ],
+      "seed": 0,
+      "task": "l2_copy"
+    }
+  ],
+  "sha256": "d1eaf22de84cdd7812151263ba40e7289cd47c040bc6e332d06cea856600bdfb"
+}
