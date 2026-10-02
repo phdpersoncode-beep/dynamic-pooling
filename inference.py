@@ -129,7 +129,7 @@ def greedy_decode_naive(model, tok, prompt, max_new_tokens=64, stop_on_eos=True)
 
 
 @torch.no_grad()
-def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True):
+def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True, *, prefill="stream"):
     """KV-cached greedy decoding (batch size 1).
 
     prompt: 1D LongTensor (or list). Returns tokens (T,) and b1/b2/b3 (T,).
@@ -143,13 +143,13 @@ def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True
     if prompt.ndim != 1:
         raise ValueError("single-sequence prompt must be one-dimensional")
     result = greedy_decode_cached_batched(model, tok, prompt[:, None],
-                                          max_new_tokens, stop_on_eos)
+                                          max_new_tokens, stop_on_eos, prefill=prefill)
     return tuple(x[:, 0] for x in result)
 
 
 @torch.no_grad()
 def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
-                                stop_on_eos=True):
+                                stop_on_eos=True, *, prefill="stream"):
     """Batched KV-cached greedy decoding.
 
     prompt: T0 x B (or 1D) LongTensor of equal-length prompts. Each member stops
@@ -158,6 +158,8 @@ def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
     Returns tokens (T x B) and b1/b2/b3 (T x B); use ``eos_lengths`` for the ends.
     """
     model.eval()
+    if prefill not in ("stream", "parallel"):
+        raise ValueError("prefill must be stream or parallel")
     if prompt.dim() == 1:
         prompt = prompt.view(-1, 1)
     _check_prompt(prompt, model, tok, max_new_tokens)
@@ -182,12 +184,18 @@ def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
                 else torch.zeros(B, dtype=torch.bool, device=dev))
     if max_new_tokens == 0 or (stop_on_eos and bool(finished.all())):
         return (prompt.clone(), *tok.group_sequence(prompt, sequence_dim=0))
-    state = model.init_state_batched(B, max_len=T0 + max_new_tokens, device=dev)
-    logit = None
-    for t in range(T0):                              # consume the prompt
-        active = (~finished) if stop_on_eos else None
-        c1, c2, c3 = closes(prompt[t], active)
-        logit = model.step_batched(state, prompt[t], c1, c2, c3, active=active)
+    if prefill == "parallel" and not bool(finished.any()):
+        from prefill import prefill_batched
+        events = [closes(row, None) for row in prompt]
+        boundaries = [torch.stack([event[level] for event in events]) for level in range(3)]
+        logit, state = prefill_batched(model, prompt, *boundaries, max_len=T0 + max_new_tokens)
+    else:
+        state = model.init_state_batched(B, max_len=T0 + max_new_tokens, device=dev)
+        logit = None
+        for t in range(T0):                          # consume the prompt
+            active = (~finished) if stop_on_eos else None
+            c1, c2, c3 = closes(prompt[t], active)
+            logit = model.step_batched(state, prompt[t], c1, c2, c3, active=active)
 
     tokens = prompt.clone()
     for step in range(max_new_tokens):

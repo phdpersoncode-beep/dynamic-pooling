@@ -3,17 +3,18 @@ import torch
 from inference import load_trained, greedy_decode_cached, greedy_decode_cached_batched, greedy_decode_naive
 
 
+@pytest.mark.parametrize('prefill', ['stream', 'parallel'])
 @pytest.mark.parametrize('device', ['cpu', pytest.param('cuda', marks=pytest.mark.skipif(
     not torch.cuda.is_available(), reason='CUDA hardware unavailable'))])
-def test_explicit_device_and_batched_choices(device):
+def test_explicit_device_and_batched_choices(device, prefill):
     model, tok, _ = load_trained('checkpoints/toy.pt', device=device)
     prompt = torch.tensor([tok.encode('SOS x1 b1 x2 b2 x3 b3'.split()),
                            tok.encode('SOS x2 x3 b1 x4 b2 x5'.split())], device=device).T
     assert next(model.parameters()).device.type == device
     naive = greedy_decode_naive(model, tok, prompt, 12, False)
-    cached = greedy_decode_cached_batched(model, tok, prompt, 12, False)
+    cached = greedy_decode_cached_batched(model, tok, prompt, 12, False, prefill=prefill)
     assert all(torch.equal(a, b) for a, b in zip(naive, cached))
-    single = greedy_decode_cached(model, tok, prompt[:, 0].tolist(), 12, False)
+    single = greedy_decode_cached(model, tok, prompt[:, 0].tolist(), 12, False, prefill=prefill)
     assert single[0].device.type == device
     assert torch.equal(single[0], naive[0][:, 0])
 

@@ -20,5 +20,6 @@ Resume from [docs/WORK_STATE.md](docs/WORK_STATE.md). Results: [docs/v2_results.
 Current continuation:
 - [x] Shared single/batched decoder, default-rule fast path, skip unused last step.
 - [x] Explicit model device placement and measured-error/margin diagnostics.
+- [x] Optional parallel prefill; real K/V, open-group state, custom-rule and restart checks.
 - [ ] Finish separate prefill/decode and isolated process-memory measurements.
 - [ ] Replay retained numerical failures with CPU/build metadata; retain failures.

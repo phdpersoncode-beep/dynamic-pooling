@@ -39,6 +39,7 @@ errors depend on operation order, sequence length, weights and backend.
 ```bash
 uv run python decode.py --prompt 'SOS x1 b1 x2 b2 x3 b3' --verify
 uv run python decode.py --backend naive --max-new-tokens 64
+uv run python decode.py --prefill parallel --verify --max-new-tokens 64
 ```
 
 Both accept `--device` and `--dtype`; `--verify` runs both complete greedy
@@ -50,3 +51,32 @@ The single-sequence cached wrapper uses the batched implementation. It prealloca
 token-rate caches, skips unused final computation, and uses a device-local
 lookup for the default rule. Custom stateful rules retain their causal Python path.
 `CacheSession` remains the CPU-only durable reference format.
+
+## Optional parallel prefill
+
+`--prefill parallel` uses one normal forward pass over the prompt, copies its
+per-layer keys/values, and then continues with the existing cached step. The
+default remains `stream` while this optional path receives broader validation.
+
+For `SOS x1 b1 x2 b2 x3`, the prompt ends inside an L1 group. Prefill must save:
+
+- K/V for every real token and completed group (including each level's null).
+- L1's open sum/count containing `x3`.
+- L2's empty open group, because `b2` closed it and no new L1 group followed.
+- L3's open sum/count containing its processed L2 null and first completed L2 group.
+- The most recent coarse outputs used by the return path.
+
+When the next token is `b3`, the existing streaming step adds it to L1 and
+closes all three levels. No special boundary behavior is introduced by prefill.
+
+Each member's pooled cache starts compact, in its own real group order. Later
+batched steps can introduce padding slots. Relative attention continues to count
+real positions, so physical buffer offsets do not change relative distances.
+Tests compare all real K/V entries, running means/counts and continuation at
+every split of uneven mixed-boundary sequences, including zero-layer stacks.
+
+Parallel prefill preserves stateful tokenizer rules; prompts containing an
+already-finished member use the streamed path. It temporarily attaches capture
+hooks, so concurrent prefill calls on the same model object are unsupported.
+It materializes full-prefix attention, trading a higher prompt-phase memory
+peak for less prompt-processing time. Bfloat16 parity remains unresolved.

@@ -18,6 +18,7 @@ import torch
 from hierarchy_v2 import fingerprint, linearize, random_tree
 from inference import load_trained
 from numerics import compare_logits
+from prefill import prefill_batched
 from scripts.runtime_info import runtime_info
 
 
@@ -60,7 +61,10 @@ def worker(args):
         state, outputs, logits = None, [], None
         if device.type == 'cuda': torch.cuda.reset_peak_memory_stats(device)
         synchronize(device); start = time.perf_counter()
-        if args.worker == 'cached':
+        if args.worker == 'prefilled':
+            logits, state = prefill_batched(model, data[:args.prompt],
+                            *(c[:args.prompt] for c in closes), max_len=len(data))
+        elif args.worker == 'cached':
             state = model.init_state_batched(args.batch, max_len=len(data), device=device)
             for t in range(args.prompt):
                 logits = model.step_batched(state, data[t], *(c[t] for c in closes))
@@ -73,7 +77,7 @@ def worker(args):
         outputs = [logits]
         synchronize(device); start = time.perf_counter()
         for t in range(args.prompt, len(data)):
-            if args.worker == 'cached':
+            if args.worker in ('cached', 'prefilled'):
                 logits = model.step_batched(state, data[t], *(c[t] for c in closes))
             else:
                 logits = model(data[:t+1], *(c[:t+1] for c in closes))[-1:].clone()
@@ -102,8 +106,8 @@ def main():
     parser.add_argument('--prompt', type=int, default=256)
     parser.add_argument('--steps', type=int, default=64)
     parser.add_argument('--batch', type=int, default=1)
-    parser.add_argument('--worker', choices=['naive', 'cached'])
-    parser.add_argument('--output', default='docs/inference_progress/benchmarks')
+    parser.add_argument('--worker', choices=['naive', 'cached', 'prefilled'])
+    parser.add_argument('--output', default='docs/inference_progress/benchmarks_prefill')
     args = parser.parse_args()
     if min(args.prompt, args.steps, args.batch, args.repeats, args.threads) < 1:
         parser.error('lengths, batch, repeats and threads must be positive')
@@ -112,7 +116,7 @@ def main():
     torch.set_num_threads(args.threads)
     settings = {k:v for k,v in vars(args).items() if k not in ('worker', 'output')}
     source = {p:Path(p).read_text() for p in ['scripts/benchmark_phases.py', 'hourglass.py',
-              'shortening.py', 'tokenizer.py', 'hierarchy_v2.py', 'inference.py', 'numerics.py', 'scripts/runtime_info.py']}
+              'shortening.py', 'tokenizer.py', 'hierarchy_v2.py', 'inference.py', 'numerics.py', 'prefill.py', 'scripts/runtime_info.py']}
     manifest = {'settings': settings, 'runtime': runtime_info(), 'source_hash': fingerprint(source),
                 'checkpoint_sha256': hashlib.sha256(Path(args.checkpoint).read_bytes()).hexdigest()}
     output = Path(args.output); output.mkdir(parents=True, exist_ok=True)
@@ -124,19 +128,26 @@ def main():
     command = [sys.executable, '-m', 'scripts.benchmark_phases']
     for key, value in settings.items(): command.extend(['--' + key, str(value)])
     results = {mode:json.loads(subprocess.check_output(command + ['--worker', mode], text=True))
-               for mode in ['naive', 'cached']}
+               for mode in ['naive', 'cached', 'prefilled']}
     naive = torch.tensor(results['naive'].pop('logits'), dtype=getattr(torch, args.dtype))
     cached = torch.tensor(results['cached'].pop('logits'), dtype=getattr(torch, args.dtype))
+    prefilled = torch.tensor(results['prefilled'].pop('logits'), dtype=getattr(torch, args.dtype))
     _, tok, _ = load_trained(args.checkpoint)
     data = workload(tok, args.prompt + args.steps, args.batch)
     results.update({'manifest': manifest, 'parity': compare_logits(naive, cached),
+                    'prefilled_parity': compare_logits(naive, prefilled),
                     'tokens': data.T.tolist(),
                     'decode_speedup': results['naive']['median_decode_seconds'] / results['cached']['median_decode_seconds'],
-                    'prefill_speedup': results['naive']['median_prefill_seconds'] / results['cached']['median_prefill_seconds']})
+                    'prefill_speedup': results['naive']['median_prefill_seconds'] / results['cached']['median_prefill_seconds'],
+                    'parallel_vs_stream_prefill_speedup': results['cached']['median_prefill_seconds'] / results['prefilled']['median_prefill_seconds'],
+                    'parallel_total_speedup': (results['naive']['median_prefill_seconds'] + results['naive']['median_decode_seconds']) /
+                                              (results['prefilled']['median_prefill_seconds'] + results['prefilled']['median_decode_seconds'])})
     temporary = path.with_suffix('.tmp'); temporary.write_text(json.dumps(results, indent=2)+'\n'); temporary.replace(path)
     print(json.dumps({'path': str(path), 'decode_speedup': results['decode_speedup'],
-                      'prefill_speedup': results['prefill_speedup'], 'parity': results['parity']}))
-    if results['parity']['greedy_mismatches']:
+                      'parallel_vs_stream_prefill_speedup': results['parallel_vs_stream_prefill_speedup'],
+                      'parallel_total_speedup': results['parallel_total_speedup'],
+                      'parity': results['parity'], 'prefilled_parity': results['prefilled_parity']}))
+    if results['parity']['greedy_mismatches'] or results['prefilled_parity']['greedy_mismatches']:
         raise SystemExit('greedy mismatch: retained in report')
 
 

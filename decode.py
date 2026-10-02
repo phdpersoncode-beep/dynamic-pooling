@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--dtype', choices=['float32', 'float64', 'bfloat16'], default='float32')
     parser.add_argument('--backend', choices=['cached', 'naive'], default='cached')
+    parser.add_argument('--prefill', choices=['stream', 'parallel'], default='stream')
     parser.add_argument('--verify', action='store_true')
     parser.add_argument('--ignore-eos', action='store_true')
     parser.add_argument('--threads', type=int, default=1)
@@ -21,12 +22,15 @@ def main():
     model, tok, _ = load_trained(args.checkpoint, device=args.device, dtype=getattr(torch, args.dtype))
     prompt = torch.tensor(tok.encode(args.prompt.split()), dtype=torch.long, device=args.device)[:, None]
     methods = {'cached': greedy_decode_cached_batched, 'naive': greedy_decode_naive}
-    output = methods[args.backend](model, tok, prompt, args.max_new_tokens, not args.ignore_eos)[0]
+    def run(backend):
+        options = {'prefill': args.prefill} if backend == 'cached' else {}
+        return methods[backend](model, tok, prompt, args.max_new_tokens, not args.ignore_eos, **options)[0]
+    output = run(args.backend)
     result = {'tokens': tok.decode(output[:, 0]), 'device': str(output.device), 'dtype': args.dtype,
-              'backend': args.backend}
+              'backend': args.backend, 'prefill': args.prefill if args.backend == 'cached' else None}
     if args.verify:
         other = 'naive' if args.backend == 'cached' else 'cached'
-        reference = methods[other](model, tok, prompt, args.max_new_tokens, not args.ignore_eos)[0]
+        reference = run(other)
         result['naive_cached_tokens_match'] = torch.equal(output, reference)
     print(json.dumps(result, indent=2))
     if args.verify and not result['naive_cached_tokens_match']:

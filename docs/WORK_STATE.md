@@ -23,12 +23,19 @@ performance and actual process memory measurements. See `inference_precision.md`
 - Simplified single/batched cached decoding; default rule uses a device lookup;
   avoid an unused final forward. Model loading accepts explicit device placement.
 - Added measured-error/top-two-margin diagnostics without widening thresholds.
-- Validation so far: 163 passed, 1 known BF16 xfail, 1 CUDA skip (CPU-only runtime).
+- Validation: 174 passed, 1 known BF16 xfail, 2 CUDA skips (CPU-only runtime).
+  Full evidence: `inference_progress/tests.txt`.
 - `scripts/benchmark_phases.py` runs identical mixed-boundary prefixes and
   continuations in isolated naive/cached workers, separates prefill/decode,
   records process peak RSS and runtime/build/CPU details, and saves cases atomically.
-- NEXT: complete benchmark matrix, replay retained numerical failures with runtime
-  metadata, interpret bottlenecks, document results, push. Do not rerun the old
+- First checkpoint published: `a6fcee0` (shared decoder and numerical diagnostics).
+- Five isolated baseline phase benchmarks completed under `inference_progress/benchmarks/`.
+  Streamed prefill is the bottleneck; its source is checkpoint `a6fcee0`.
+- Added optional `prefill_batched` using one unchanged naive forward to construct
+  compact per-member K/V, open group accumulators and last coarse outputs.
+  `decode.py --prefill parallel --verify` exposes it; stream remains default.
+- NEXT: finish the parallel-prefill benchmark matrix, replay retained
+  numerical failures with runtime metadata, document results and push. Do not rerun the old
   learning matrix or change architecture/cue semantics as part of this milestone.
 
 ## Current outcome

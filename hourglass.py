@@ -512,7 +512,7 @@ class HourglassLM(nn.Module):
         return out
 
     # ---- naive full-recompute forward ----------------------------------
-    def forward(self, data, c1, c2, c3, target=None):
+    def forward(self, data, c1, c2, c3, target=None, *, _trace=None):
         """data, c1, c2, c3: T x B. Returns logits (T x B x V), or (logits,
         loss T x B) when target is given."""
         if data.ndim != 2 or 0 in data.shape or any(c.shape != data.shape for c in (c1, c2, c3)):
@@ -545,6 +545,10 @@ class HourglassLM(nn.Module):
         g0 = self._run_stack(upsample(bnd1, f1) + res0, self.stacks['post'])
 
         logit = self.final_cast(g0)
+
+        if _trace is not None:
+            _trace.update(h0=h0, h1=h1, h2=h2, h3=h3, e2=e2, f1=f1,
+                          boundaries=(bnd1, bnd2, bnd3))
 
         if target is not None:
             loss = self.crit(logit.view(-1, logit.size(-1)), target.reshape(-1))
