@@ -103,3 +103,5 @@ bound; the earlier BF16 greedy mismatch remains open. See the results before
 interpreting cache parity as a universal precision guarantee.
 
 Inference usage and numerical limits: [docs/inference_precision.md](docs/inference_precision.md).
+
+Latest measurements and remaining work: [inference progress](docs/inference_progress/README.md).

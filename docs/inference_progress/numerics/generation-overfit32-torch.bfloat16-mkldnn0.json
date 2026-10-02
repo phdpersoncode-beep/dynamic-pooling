@@ -1,0 +1,10 @@
+{
+  "mkldnn_enabled": false,
+  "checkpoint": "overfit32",
+  "audit": {
+    "dtype": "torch.bfloat16",
+    "steps": 300,
+    "max_error": 0.0,
+    "matches": true
+  }
+}

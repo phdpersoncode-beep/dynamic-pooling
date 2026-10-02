@@ -13,32 +13,40 @@ Verified against original `shortening.py` at `1e6f360`. V2 changes data/tasks, n
 this architecture contract. Old `toy.pt` and `overfit32.pt` are unchanged.
 The user additionally requested longer sequences with interspersed b1/b2/b3.
 
-## Active continuation: inference reliability and efficiency
+## Latest completed milestone: inference reliability and efficiency
 
-The user authorized continuing TODOs and pushing to this same branch. The v2
-results below remain historical evidence. Current focus: explicit numerical
-contract, shared/device-aware decoding, runtime metadata, then phase-separated
-performance and actual process memory measurements. See `inference_precision.md`.
+The user authorized continuing TODOs and pushing to this same branch. Current
+results: [inference_progress/README.md](inference_progress/README.md). Numerical
+contract and usage: [inference_precision.md](inference_precision.md).
 
-- Simplified single/batched cached decoding; default rule uses a device lookup;
-  avoid an unused final forward. Model loading accepts explicit device placement.
-- Added measured-error/top-two-margin diagnostics without widening thresholds.
-- Validation: 174 passed, 1 known BF16 xfail, 2 CUDA skips (CPU-only runtime).
-  Full evidence: `inference_progress/tests.txt`.
-- `scripts/benchmark_phases.py` runs identical mixed-boundary prefixes and
-  continuations in isolated naive/cached workers, separates prefill/decode,
-  records process peak RSS and runtime/build/CPU details, and saves cases atomically.
-- First checkpoint published: `a6fcee0` (shared decoder and numerical diagnostics).
-- Five isolated baseline phase benchmarks completed under `inference_progress/benchmarks/`.
-  Streamed prefill is the bottleneck; its source is checkpoint `a6fcee0`.
-- Added optional `prefill_batched` using one unchanged naive forward to construct
-  compact per-member K/V, open group accumulators and last coarse outputs.
-  `decode.py --prefill parallel --verify` exposes it; stream remains default.
-- NEXT: finish the parallel-prefill benchmark matrix, replay retained
-  numerical failures with runtime metadata, document results and push. Do not rerun the old
-  learning matrix or change architecture/cue semantics as part of this milestone.
+- `a6fcee0`: shared single/batched decoder, device placement, default-rule fast
+  path, skipped unused final step and measured-error/margin diagnostics.
+- `7afaa1b`: optional parallel prefill from the existing naive forward; captures
+  real K/V, open sums/counts and last coarse outputs. Stream stays default.
+- Full suite: **174 passed, 2 CUDA skips, 1 known BF16 xfail**. Hosted fast and
+  exhaustive tests passed at `7afaa1b`, run `36972910086`, job `110730484135`.
+- Five three-path CPU benchmarks complete: 64/256-token prompts at batches 1/4,
+  plus 1,024 at batch 1; 64 continuation updates each. Both cache paths match all
+  715 measured prefix/member choices per path. Parallel prefill is 9.1–25.2x
+  faster than streamed prefill; combined workload is 3.0–41.1x faster than naive.
+  Full-prefix attention raises prefill memory. Measurements are teacher-forced
+  small-model CPU workloads, not production throughput or CUDA claims.
+- Four retained-history replays and eight generation audits complete. FP32 prefix
+  2,039 still exceeds the old bound (6.7234e-5 vs 9.4266e-6), choices unchanged.
+  BF16 fallback again differs at prefix 165 (naive b1, cached EOS). Neither fixed.
+- Baselines: `inference_progress/benchmarks/` (source a6fcee0, earlier runtime).
+  Same-runtime three-path matrix: `inference_progress/benchmarks_prefill/`.
+  Exact histories/runtime: `inference_progress/numerics/`. Tests and CLI example
+  are adjacent. Scripts validate manifests, skip completed cases and save atomically.
+- No need to repeat completed benchmarks or the old learning matrix after interruption.
+  New source/runtime needs a new `--output` directory to preserve evidence.
 
-## Current outcome
+NEXT: TODO N2/N1 numerical amplification/minimization, D2 L2/L3 learning, G2 CUDA
+when hardware is available, then O1 optimized attention/compact storage. Preserve
+original pooling and the naive oracle. No architecture or cue-token changes have
+been made. Prefill uses temporary hooks; concurrent calls on one model are unsupported.
+
+## Earlier v2 outcome
 
 Implementation, agreed small experiments and final publication are complete. Read `v2_results.md` for conclusions and `v2_trees_and_cache.md`
 for exact trees, means, null membership, token timing and cache examples.

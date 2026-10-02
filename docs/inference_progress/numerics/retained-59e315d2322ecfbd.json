@@ -1,0 +1,68 @@
+{
+  "source": "docs/v2_long/overfit32-1024-torch.float32.json",
+  "checkpoint": "checkpoints/overfit32.pt",
+  "prefix_length": 17,
+  "symbols": [
+    [
+      "SOS",
+      "x6",
+      "x12",
+      "x13",
+      "x5",
+      "b1",
+      "x6",
+      "x13",
+      "x7",
+      "x5",
+      "x14",
+      "x13",
+      "b1",
+      "x12",
+      "x8",
+      "x12",
+      "x7"
+    ],
+    [
+      "SOS",
+      "x9",
+      "x1",
+      "x0",
+      "b1",
+      "x7",
+      "x14",
+      "x14",
+      "x14",
+      "b3",
+      "x13",
+      "b3",
+      "x6",
+      "x11",
+      "x7",
+      "x10",
+      "x14"
+    ]
+  ],
+  "results": {
+    "torch.float32": {
+      "rows": 2,
+      "max_abs_error": 4.76837158203125e-06,
+      "historical_threshold": 1.1665893907775171e-05,
+      "within_historical_threshold": true,
+      "greedy_mismatches": 0,
+      "min_naive_margin": 0.3552236557006836,
+      "rows_with_margin_over_twice_error": 2,
+      "rows_without_margin_certificate": 0
+    },
+    "torch.float64": {
+      "rows": 2,
+      "max_abs_error": 1.509903313490213e-14,
+      "historical_threshold": 2.1729424895131282e-14,
+      "within_historical_threshold": true,
+      "greedy_mismatches": 0,
+      "min_naive_margin": 0.35522431720671044,
+      "rows_with_margin_over_twice_error": 2,
+      "rows_without_margin_certificate": 0
+    }
+  },
+  "scope": "standalone final-prefix replay; historical streamed execution may differ"
+}
