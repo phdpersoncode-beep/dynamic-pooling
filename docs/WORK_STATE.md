@@ -1,14 +1,17 @@
 # Work state — read first when resuming
 
-Updated: 2026-10-02. Branch: `debug/fp32-cache-numerics` (from `232f2f5`).
+Updated: 2026-10-05. Branch: `review/pr1-cache-correctness`.
 Published work: [draft PR #2](https://github.com/phdpersoncode-beep/dynamic-pooling/pull/2),
 targeting PR #1 (`feat/first-kv-cache`). Do not merge without user direction.
 
-## Active numerical investigation
+## Completed numerical investigation and PR integration
 
-User requested a separate debug branch to establish why FP32 outputs differ.
-The review branch is preserved. Remote debug branch starts at `232f2f5`.
-Do not treat the numerical hypothesis as a proven root cause before interventions.
+At the user's request, integrated all work from `debug/fp32-cache-numerics`
+through `c4ed9a2` into PR #2 by fast-forward, preserving both debug commits.
+The debug branch remains available. PR #2 remains open and draft; its base is
+unchanged. Production model math and tolerances are unchanged by this integration.
+The completed investigation establishes the dominant source on the retained
+fixture, not a universal bound or a production precision fix.
 
 Plan: trace retained toy prefix 2,039; compare each operation's naive/cached inputs
 and outputs; replay modules on identical inputs in full-length and one-row shapes;
