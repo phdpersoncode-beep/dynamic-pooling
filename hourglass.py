@@ -502,8 +502,9 @@ class HourglassLM(nn.Module):
         qlen = core_input.size(0)
         dec_attn_mask = torch.triu(
             core_input.new_ones(qlen, qlen), diagonal=1).bool()
-        pos_seq = torch.arange(qlen - 1, -1, -1.0,
-                               device=core_input.device, dtype=core_input.dtype)
+        # Integer indices align ascending cached and descending naive tables.
+        pos_seq = torch.arange(qlen - 1, -1, -1,
+                               device=core_input.device).to(core_input.dtype)
         pos_emb = self.drop(self.pos_emb(pos_seq))
         out = core_input
         for layer in layers:
@@ -511,9 +512,11 @@ class HourglassLM(nn.Module):
         return out
 
     # ---- naive full-recompute forward ----------------------------------
-    def forward(self, data, c1, c2, c3, target=None):
+    def forward(self, data, c1, c2, c3, target=None, *, _trace=None):
         """data, c1, c2, c3: T x B. Returns logits (T x B x V), or (logits,
         loss T x B) when target is given."""
+        if data.ndim != 2 or 0 in data.shape or any(c.shape != data.shape for c in (c1, c2, c3)):
+            raise ValueError("expected nonempty matching time x batch tensors")
         tgt_len, bsz = data.size(0), data.size(1)
         hidden = self.drop(self.word_emb(data))
 
@@ -542,6 +545,10 @@ class HourglassLM(nn.Module):
         g0 = self._run_stack(upsample(bnd1, f1) + res0, self.stacks['post'])
 
         logit = self.final_cast(g0)
+
+        if _trace is not None:
+            _trace.update(h0=h0, h1=h1, h2=h2, h3=h3, e2=e2, f1=f1,
+                          boundaries=(bnd1, bnd2, bnd3))
 
         if target is not None:
             loss = self.crit(logit.view(-1, logit.size(-1)), target.reshape(-1))
@@ -604,7 +611,7 @@ class HourglassLM(nn.Module):
         if state['pos_cap'] >= need:
             return
         cap = max(need, 2 * state['pos_cap'], 8)
-        pos = torch.arange(cap, device=state['device'], dtype=state['dtype'])
+        pos = torch.arange(cap, device=state['device']).to(state['dtype'])
         table = self.pos_emb(pos).squeeze(1)              # cap x C
         with torch.no_grad():
             for name in STACK_NAMES:
@@ -702,6 +709,10 @@ class HourglassLM(nn.Module):
         B = state['bsz']
         dev = self.r_w_bias.device
         dt, acc = state['dtype'], state['accum_dtype']
+        if any(x.shape != (B,) for x in (tokens, c1, c2, c3)):
+            raise ValueError("tokens and closes must have shape (batch,)")
+        if active is not None and (active.shape != (B,) or active.dtype != torch.bool):
+            raise ValueError("active must be a boolean tensor of shape (batch,)")
         check_closes(c1, c2, c3)
         if active is None:
             active = torch.ones(B, dtype=torch.bool, device=dev)
@@ -775,8 +786,8 @@ class HourglassLM(nn.Module):
     def step(self, state, token_id, c1, c2, c3):
         """Advance one token for a batch-size-1 state. Returns logits 1 x 1 x V."""
         dev = self.r_w_bias.device
-        t = lambda v: torch.tensor([int(v)], device=dev)
-        return self.step_batched(state, t(token_id), t(c1), t(c2), t(c3))
+        t = lambda v: torch.tensor([v], device=dev)
+        return self.step_batched(state, t(int(token_id)), t(c1), t(c2), t(c3))
 
     def cached_forward(self, data, c1, c2, c3):
         """Batched cached path restricted to T x 1 (kept for existing callers)."""

@@ -1,0 +1,34 @@
+{
+  "task_suite": "seen-vocabulary-two-leaf-repeat-v2",
+  "contract": {
+    "version": 2,
+    "grammar": "nonempty-tree-v2",
+    "rule": "literal-cumulative-v1",
+    "pooling": "original-inclusive-equal-child-v1",
+    "eos": "stop-without-flush"
+  },
+  "code_hash": "b85e45492ef6c948ae4835d092d1f1fcdf0069e2ef174554d510542143bad56b",
+  "config": {
+    "n_head": 2,
+    "d_model": 16,
+    "d_head": 8,
+    "d_inner": 32,
+    "dropout": 0.0,
+    "dropatt": 0.0
+  },
+  "steps": 200,
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "torch": "2.13.0+cpu",
+  "dtype": "float32",
+  "device": "cpu",
+  "mkldnn": true,
+  "threads": 1,
+  "git_commit": "4b27a648f5d93bf15b6c80a677840d1940ebd49d",
+  "cuda_tested": false,
+  "tolerance": "16 * eps * max(1, max_abs_logit)",
+  "case_count": 19
+}
