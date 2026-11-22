@@ -16,7 +16,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from shortening import downsample, upsample
+from shortening import (accum_dtype, check_closes, downsample, upsample,
+                        level_boundaries)
 
 
 @torch.jit.script
@@ -120,7 +121,7 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
         qlen, rlen, bsz = w.size(0), r.size(0), w.size(1)
 
         if self.pre_lnorm:
-            w_head_q, w_head_k, w_head_v = self.qkv_net(self.layer_norm(w))
+            w_heads = self.qkv_net(self.layer_norm(w))
         else:
             w_heads = self.qkv_net(w)
 
@@ -179,6 +180,57 @@ class RelPartialLearnableMultiHeadAttn(nn.Module):
 
         return output
 
+    def step_batched(self, x_in, k_buf, v_buf, fill, dist, rk_table, key_mask,
+                     r_w_bias, r_r_bias):
+        """Batched incremental attention with preallocated, ragged caches.
+
+        x_in:     1 x B x C new position (query = key = value source).
+        k_buf/v_buf: cap x B x n_head x d_head preallocated caches; the new
+                  key/value are written in place at row ``fill``.
+        dist:     L x B long, each slot's ordinal distance from the query in
+                  that sequence's own (padding-free) numbering (L = fill + 1).
+        rk_table: cap x n_head x d_head -- ``r_net`` applied once to the
+                  sinusoid distance table. ``r_net`` is linear, so
+                  ``r_net(table)[d] == r_net(table[d])`` and the per-step
+                  relative-position keys are a gather rather than a projection
+                  of the whole key history.
+        key_mask: B x L bool, True where a slot must NOT be attended (a padding
+                  slot that is not a real group for that sequence).
+
+        One query per sequence attends to that sequence's valid keys at their
+        per-sequence ordinal distances, reproducing the naive relative attention
+        independently for every batch member. Returns output 1 x B x C.
+        """
+        assert not self.pre_lnorm
+        B = x_in.size(1)
+        w_q, w_k, w_v = torch.chunk(self.qkv_net(x_in), 3, dim=-1)
+        w_q = w_q.view(1, B, self.n_head, self.d_head)
+        k_buf[fill] = w_k.reshape(B, self.n_head, self.d_head)
+        v_buf[fill] = w_v.reshape(B, self.n_head, self.d_head)
+
+        L = fill + 1
+        k = k_buf[:L]                                    # L x B x nh x dh (view)
+        v = v_buf[:L]
+        r_head_k = rk_table[dist]                        # L x B x nh x dh
+
+        rw_q = w_q + r_w_bias
+        AC = torch.einsum('ibnd,jbnd->bnij', rw_q, k)    # B x nh x 1 x L
+        rr_q = w_q + r_r_bias
+        BD = torch.einsum('ibnd,jbnd->bnij', rr_q, r_head_k)
+        attn_score = add_and_scale(AC, BD, self.scale)
+        attn_score = attn_score.masked_fill(key_mask[:, None, None, :],
+                                            -float('inf'))
+
+        attn_prob = F.softmax(attn_score, dim=3)
+        attn_prob = self.dropatt(attn_prob)
+
+        attn_vec = torch.einsum('bnij,jbnd->ibnd', attn_prob, v)
+        attn_vec = attn_vec.contiguous().view(1, B, self.n_head * self.d_head)
+
+        attn_out = self.o_net(attn_vec)
+        attn_out = self.drop(attn_out)
+        return self.layer_norm(x_in + attn_out)
+
 
 class RelPartialLearnableDecoderLayer(nn.Module):
     def __init__(
@@ -212,99 +264,17 @@ class RelPartialLearnableDecoderLayer(nn.Module):
 
         return output
 
-
-class BoundaryPredictor(nn.Module):
-    def __init__(self, d_model, d_inner, activation_function,
-                 temp, prior, bp_type, threshold=0.5):
-        super().__init__()
-        self.temp = temp
-        self.prior = prior
-        self.bp_type = bp_type
-        self.threshold = threshold
-
-        if activation_function == 'relu':
-            activation_fn = nn.ReLU(inplace=True)
-        elif activation_function == 'gelu':
-            activation_fn = torch.nn.GELU()
-
-        self.boundary_predictor = nn.Sequential(
-            nn.Linear(d_model, d_inner),
-            activation_fn,
-            nn.Linear(d_inner, 1),
-        )
-
-        self.loss = nn.BCEWithLogitsLoss()
-
-    def forward(self, hidden):
-        # Hidden is of shape [seq_len x bs x d_model]
-        # Boundaries we return are [bs x seq_len]
-        boundary_logits = self.boundary_predictor(hidden).squeeze(-1).transpose(0, 1)
-        boundary_probs = torch.sigmoid(boundary_logits)
-
-        if self.bp_type == 'gumbel':
-            bernoulli = torch.distributions.relaxed_bernoulli.RelaxedBernoulli(
-                temperature=self.temp,
-                probs=boundary_probs,
-            )
-
-            soft_boundaries = bernoulli.rsample()
-
-            hard_boundaries = (soft_boundaries > self.threshold).float()
-            hard_boundaries = (
-                hard_boundaries - soft_boundaries.detach() + soft_boundaries
-            )
-        elif self.bp_type in ['entropy', 'unigram']:
-            soft_boundaries = boundary_probs
-            hard_boundaries = (soft_boundaries > self.threshold).float()
-
-        return soft_boundaries, hard_boundaries
-
-    def calc_loss(self, preds, gt):
-        # B x T
-        if self.bp_type in ['entropy', 'unigram']:
-            assert preds is not None and gt is not None
-            return self.loss(preds, gt.float())
-        elif self.bp_type in ['gumbel']:
-            assert gt is None
-            binomial = torch.distributions.binomial.Binomial(
-                preds.size(-1),
-                probs=torch.Tensor([self.prior]).to(preds.device)
-            )
-            loss_boundaries = -binomial.log_prob(
-                preds.sum(dim=-1)
-            ).mean() / preds.size(-1)
-
-            return loss_boundaries
-
-    def calc_stats(self, preds, gt):
-        # B x T
-        preds, gt = preds.bool(), gt.bool()
-        TP = ((preds == gt) & preds).sum().item()
-        FP = ((preds != gt) & preds).sum().item()
-        FN = ((preds != gt) & (~preds)).sum().item()
-
-        acc = (preds == gt).sum().item() / gt.numel()
-
-        if TP == 0:
-            precision, recall = 0, 0
-        else:
-            precision = TP / (TP + FP)
-            recall = TP / (TP + FN)
-
-        stats = {
-            'acc': acc,
-            'precision': precision,
-            'recall': recall
-        }
-
-        return stats
+    def step_batched(self, x_in, k_buf, v_buf, fill, dist, rk_table, key_mask,
+                     r_w_bias, r_r_bias):
+        output = self.dec_attn.step_batched(
+            x_in, k_buf, v_buf, fill, dist, rk_table, key_mask, r_w_bias, r_r_bias)
+        return self.pos_ff(output)
 
 
 class MemTransformerLM(nn.Module):
     def __init__(self, n_token, n_head, d_model, d_head, d_inner,
                  dropout, dropatt, pre_lnorm, model_config,
-                 activation_function, boundaries_type, spikes_left,
-                 temp, prior,
+                 activation_function, boundaries_type,
                  ):
         super(MemTransformerLM, self).__init__()
         self.n_token = n_token
@@ -341,7 +311,6 @@ class MemTransformerLM(nn.Module):
         pre_layers, (shortened_layers, ), post_layers = eval(model_config)
 
         self.boundaries_type = boundaries_type
-        self.is_bp = boundaries_type in ['unigram', 'entropy', 'gumbel']
 
         if post_layers == 0 and shortened_layers == 0:
             assert boundaries_type == 'none'
@@ -359,18 +328,6 @@ class MemTransformerLM(nn.Module):
             ])
 
             self.down_ln = nn.LayerNorm(d_model)
-
-            # Boundary predictor
-            if self.is_bp:
-                self.boundary_predictor = BoundaryPredictor(
-                    d_model=d_model,
-                    d_inner=d_inner,
-                    activation_function=activation_function,
-                    temp=temp,
-                    prior=prior,
-                    bp_type=boundaries_type,
-                )
-                self.spikes_left = spikes_left
 
         self.final_cast = nn.Linear(d_model, n_token)
         self.crit = torch.nn.CrossEntropyLoss(reduction='none')
@@ -396,15 +353,6 @@ class MemTransformerLM(nn.Module):
             )
 
         return core_out
-
-    def get_spikes(self, vector):
-        total = torch.ones_like(vector).bool()
-
-        for i in range(1, self.spikes_left + 1, 1):
-            mask = vector[i:] > vector[:-i]
-            total[i:] &= mask
-
-        return total
 
     def forward(self,
                 data,
@@ -433,13 +381,8 @@ class MemTransformerLM(nn.Module):
             if i == 1:  # Downsampling
                 residual = hidden
 
-                if self.boundaries_type in ['fixed', 'whitespaces']:
-                    # T x B
-                    hard_boundaries = boundaries_gt.float().transpose(0, 1)
-                    # B x T
-                else:
-                    soft_boundaries, hard_boundaries = self.boundary_predictor(hidden)
-                    # B x T
+                # T x B -> B x T
+                hard_boundaries = boundaries_gt.float().transpose(0, 1)
 
                 hidden = downsample(
                     boundaries=hard_boundaries,
@@ -477,55 +420,6 @@ class MemTransformerLM(nn.Module):
             # T x B x C
             assert hidden.size(0) == target.size(0)
 
-            # Boundary predictor loss
-            if self.is_bp:
-                if self.boundaries_type == 'entropy':
-                    entropy = -torch.nn.functional.log_softmax(
-                        logit, dim=-1
-                    ) * torch.nn.functional.softmax(logit, dim=-1)
-
-                    entropy = torch.sum(entropy, dim=-1)
-                    # T x B
-
-                    target_boundaries = self.get_spikes(entropy).transpose(0, 1)
-                    # target_boundaries: B x T
-                elif self.boundaries_type == 'unigram':
-                    # T x B
-                    target_boundaries = boundaries_gt[-tgt_len:].transpose(0, 1)
-                    # B x T
-                elif self.boundaries_type == 'gumbel':
-                    target_boundaries = None
-
-                soft_boundaries = soft_boundaries[:, -tgt_len:]
-                hard_boundaries = hard_boundaries[:, -tgt_len:]
-
-                if self.boundaries_type in ['unigram', 'entropy']:
-                    assert target_boundaries.sum().item() > 0
-
-                    loss_boundaries = self.boundary_predictor.calc_loss(
-                        soft_boundaries, target_boundaries
-                    )
-
-                    bp_stats = self.boundary_predictor.calc_stats(
-                        hard_boundaries, target_boundaries
-                    )
-
-                    for k, v in bp_stats.items():
-                        stats[f'{k}'] = v
-                elif self.boundaries_type == 'gumbel':
-                    loss_boundaries = self.boundary_predictor.calc_loss(
-                        preds=hard_boundaries, gt=None
-                    )
-
-                    bp_stats = self.boundary_predictor.calc_stats(
-                        hard_boundaries, (data == 0)[-tgt_len:].transpose(0, 1)
-                    )
-
-                    for k, v in bp_stats.items():
-                        stats[f'{k}'] = v
-
-                stats['loss_boundaries'] = loss_boundaries.item()
-
             # LM loss
             logit = logit.view(-1, logit.size(-1))
             target = target.view(-1)
@@ -537,3 +431,353 @@ class MemTransformerLM(nn.Module):
         else:
             # Generation mode, we return raw logits
             return logit
+
+
+# Stack order in the three-level hourglass architecture.
+STACK_NAMES = ['pre', 'l1_down', 'l2_down', 'l3', 'l2_up', 'l1_up', 'post']
+# Stacks that advance once per token; the rest advance once per closed group.
+TOKEN_RATE_STACKS = frozenset({'pre', 'post'})
+
+
+class HourglassLM(nn.Module):
+    """Three-level dynamic-pooling transformer.
+
+    Architecture (with residuals joining matching-resolution reps):
+
+        token transformer (pre)
+        -> pool L1 -> L1 transformer
+        -> pool L2 -> L2 transformer
+        -> pool L3 -> L3 transformer
+        -> upsample L3 -> L2 transformer (up)   [+ res L2]
+        -> upsample L2 -> L1 transformer (up)   [+ res L1]
+        -> upsample L1 -> token transformer     [+ res token]
+        -> logits
+
+    Two equivalent inference paths are provided: a naive full-recompute
+    `forward`, and an incremental KV-cached `step`/`cached_forward`.
+    """
+
+    def __init__(self, n_token, n_head, d_model, d_head, d_inner,
+                 dropout=0.0, dropatt=0.0, activation_function='gelu',
+                 layers=(1, 1, 1, 1, 1, 1, 1)):
+        super().__init__()
+        assert len(layers) == 7
+        self.n_token = n_token
+        self.d_model = d_model
+        self.n_head = n_head
+        self.d_head = d_head
+
+        self.word_emb = nn.Embedding(n_token, d_model)
+        self.drop = nn.Dropout(dropout)
+
+        self.pos_emb = PositionalEmbedding(d_model)
+        self.r_w_bias = nn.Parameter(torch.Tensor(n_head, d_head).zero_())
+        self.r_r_bias = nn.Parameter(torch.Tensor(n_head, d_head).zero_())
+
+        def make_layers(n):
+            return nn.ModuleList([
+                RelPartialLearnableDecoderLayer(
+                    n_head, d_model, d_head, d_inner, dropout,
+                    dropatt=dropatt, pre_lnorm=False,
+                    activation_function=activation_function)
+                for _ in range(n)
+            ])
+
+        self.stacks = nn.ModuleDict(
+            {name: make_layers(n) for name, n in zip(STACK_NAMES, layers)})
+
+        # One learned null-group per down level + its post-pool LayerNorm.
+        self.null_1 = nn.Parameter(torch.Tensor(1, 1, d_model).normal_())
+        self.null_2 = nn.Parameter(torch.Tensor(1, 1, d_model).normal_())
+        self.null_3 = nn.Parameter(torch.Tensor(1, 1, d_model).normal_())
+        self.down_ln1 = nn.LayerNorm(d_model)
+        self.down_ln2 = nn.LayerNorm(d_model)
+        self.down_ln3 = nn.LayerNorm(d_model)
+
+        self.final_cast = nn.Linear(d_model, n_token)
+        self.crit = nn.CrossEntropyLoss(reduction='none')
+
+    # ---- shared full-sequence stack ------------------------------------
+    def _run_stack(self, core_input, layers):
+        qlen = core_input.size(0)
+        dec_attn_mask = torch.triu(
+            core_input.new_ones(qlen, qlen), diagonal=1).bool()
+        pos_seq = torch.arange(qlen - 1, -1, -1.0,
+                               device=core_input.device, dtype=core_input.dtype)
+        pos_emb = self.drop(self.pos_emb(pos_seq))
+        out = core_input
+        for layer in layers:
+            out = layer(out, pos_emb, self.r_w_bias, self.r_r_bias, dec_attn_mask)
+        return out
+
+    # ---- naive full-recompute forward ----------------------------------
+    def forward(self, data, c1, c2, c3, target=None):
+        """data, c1, c2, c3: T x B. Returns logits (T x B x V), or (logits,
+        loss T x B) when target is given."""
+        tgt_len, bsz = data.size(0), data.size(1)
+        hidden = self.drop(self.word_emb(data))
+
+        h0 = self._run_stack(hidden, self.stacks['pre'])
+        res0 = h0
+
+        bnd1, bnd2, bnd3 = level_boundaries(
+            c1.transpose(0, 1).contiguous(),
+            c2.transpose(0, 1).contiguous(),
+            c3.transpose(0, 1).contiguous(),
+            dtype=hidden.dtype)
+
+        h1 = self.down_ln1(downsample(bnd1, h0, self.null_1))
+        h1 = self._run_stack(h1, self.stacks['l1_down'])
+        res1 = h1
+
+        h2 = self.down_ln2(downsample(bnd2, h1, self.null_2))
+        h2 = self._run_stack(h2, self.stacks['l2_down'])
+        res2 = h2
+
+        h3 = self.down_ln3(downsample(bnd3, h2, self.null_3))
+        h3 = self._run_stack(h3, self.stacks['l3'])
+
+        e2 = self._run_stack(upsample(bnd3, h3) + res2, self.stacks['l2_up'])
+        f1 = self._run_stack(upsample(bnd2, e2) + res1, self.stacks['l1_up'])
+        g0 = self._run_stack(upsample(bnd1, f1) + res0, self.stacks['post'])
+
+        logit = self.final_cast(g0)
+
+        if target is not None:
+            loss = self.crit(logit.view(-1, logit.size(-1)), target.reshape(-1))
+            loss = loss.view(tgt_len, bsz)
+            return logit, loss
+        return logit
+
+    # ---- incremental KV-cached path (batched) --------------------------
+    #
+    # Every sequence in the batch groups at its own rate, so each shortened
+    # stack holds a *ragged* set of real group representations. They share one
+    # preallocated cache per layer: on a step where at least one sequence closes
+    # a group, all sequences append a slot, real for those that closed and a
+    # padding slot for the rest. Each query attends only to its own real slots
+    # (via `key_mask`) at its own ordinal distances (via `remb`), which makes the
+    # cached attention identical to the naive dense attention for every member.
+
+    def _ensure_cap(self, state, name, need):
+        """Grow a stack's preallocated caches (doubling) to hold `need` slots."""
+        cur = state['valid'][name].size(0)
+        if need <= cur:
+            return
+        newcap = max(need, cur * 2)
+        bsz, dev = state['bsz'], state['valid'][name].device
+        for store in ('k', 'v'):
+            for i, old in enumerate(state[store][name]):
+                buf = torch.zeros(newcap, bsz, self.n_head, self.d_head,
+                                  device=dev, dtype=state['dtype'])
+                buf[:cur] = old
+                state[store][name][i] = buf
+        ov = state['valid'][name]
+        nv = torch.zeros(newcap, bsz, dtype=torch.bool, device=dev)
+        nv[:cur] = ov
+        state['valid'][name] = nv
+
+    def _geom(self, valid_new):
+        """Per-sequence relative geometry for a batched step.
+
+        valid_new: L x B bool (which of the L slots are real for each sequence,
+        including the just-appended slot). Returns each slot's ordinal distance
+        from the query in that sequence's own padding-free numbering (L x B) and
+        the attention key mask (B x L, True = do not attend).
+        """
+        L = valid_new.size(0)
+        ordv = valid_new.long().cumsum(0)                 # L x B: #valid up to slot
+        dist = (ordv[-1].unsqueeze(0) - ordv).clamp_(0, L - 1)   # L x B
+        key_mask = ~valid_new.transpose(0, 1).contiguous()  # B x L
+        key_mask[:, -1] = False   # a query always sees its own new slot (no NaN)
+        return dist, key_mask
+
+    def _ensure_pos(self, state, need):
+        """(Re)build the cached relative-position keys to cover `need` distances.
+
+        The sinusoid distance table and each attention's ``r_net`` projection of
+        it depend only on the distance, so they are built once per decode and
+        gathered per step instead of being recomputed over the whole key history
+        at every step. This assumes the weights are frozen for the lifetime of
+        the state, which decoding already requires.
+        """
+        if state['pos_cap'] >= need:
+            return
+        cap = max(need, 2 * state['pos_cap'], 8)
+        pos = torch.arange(cap, device=state['device'], dtype=state['dtype'])
+        table = self.pos_emb(pos).squeeze(1)              # cap x C
+        with torch.no_grad():
+            for name in STACK_NAMES:
+                state['rk'][name] = [
+                    layer.dec_attn.r_net(table).view(cap, self.n_head, self.d_head)
+                    for layer in self.stacks[name]
+                ]
+        state['pos_cap'] = cap
+
+    def _stack_step_batched(self, state, name, x_new, active):
+        """Advance one stack by a single (batched) position.
+
+        active: B bool -- which sequences get a *real* new slot; the rest append
+        a padding slot. A zero-layer stack is the identity (no cache)."""
+        layers = self.stacks[name]
+        if len(layers) == 0:
+            return x_new
+        fill = state['fill'][name]
+        self._ensure_cap(state, name, fill + 1)
+        self._ensure_pos(state, fill + 1)
+        state['valid'][name][fill] = active
+        dist, key_mask = self._geom(state['valid'][name][:fill + 1])
+        out = x_new
+        for i, layer in enumerate(layers):
+            out = layer.step_batched(
+                out, state['k'][name][i], state['v'][name][i], fill, dist,
+                state['rk'][name][i], key_mask, self.r_w_bias, self.r_r_bias)
+        state['fill'][name] = fill + 1
+        return out
+
+    def init_state_batched(self, bsz, max_len=None, device=None):
+        """Fresh batched cache state.
+
+        `max_len` preallocates the token-rate stacks (`pre`/`post`) exactly:
+        they advance once per token, so `max_len + 1` slots is both necessary
+        and sufficient. The pooled stacks advance only when a group closes, at a
+        data-dependent compression ratio, so preallocating them to `max_len`
+        wastes most of the buffer (a level-3 stack typically fills a few percent
+        of it). They start small and grow by doubling instead, which is
+        bit-identical to preallocating and adapts to the actual grouping rate.
+
+        The cached path is inference-only: keys and values are written into the
+        preallocated buffers in place, which autograd cannot track. Train with
+        the naive `forward`, which is also the correctness reference.
+        """
+        dev = device or self.r_w_bias.device
+        dt = self.r_w_bias.dtype
+        acc = accum_dtype(dt)          # caches stay in `dt`; group means widen
+        token_cap = (max_len + 1) if max_len is not None else 8
+        pooled_cap = min(token_cap, 16)
+        zl = lambda: torch.zeros(bsz, dtype=torch.long, device=dev)
+        state = {
+            'bsz': bsz, 'device': dev, 'dtype': dt, 'accum_dtype': acc,
+            'k': {}, 'v': {}, 'valid': {}, 'fill': {},
+            'rk': {name: [] for name in STACK_NAMES}, 'pos_cap': 0,
+            'l1_sum': None, 'l1_cnt': zl(),
+            'l2_sum': None, 'l2_cnt': zl(),
+            'l3_sum': None, 'l3_cnt': zl(),
+            'h3_last': None, 'e2_last': None, 'f1_last': None,
+        }
+        def empty_cache(cap):
+            return torch.zeros(cap, bsz, self.n_head, self.d_head,
+                               device=dev, dtype=dt)
+
+        for name in STACK_NAMES:
+            nl = len(self.stacks[name])
+            cap = token_cap if name in TOKEN_RATE_STACKS else pooled_cap
+            state['k'][name] = [empty_cache(cap) for _ in range(nl)]
+            state['v'][name] = [empty_cache(cap) for _ in range(nl)]
+            state['valid'][name] = torch.zeros(cap, bsz, dtype=torch.bool, device=dev)
+            state['fill'][name] = 0
+
+        active = torch.ones(bsz, dtype=torch.bool, device=dev)
+        rep = lambda p: p.expand(1, bsz, self.d_model)   # 1x1xC param -> 1xBxC
+        # Prime the pooled + up stacks with their processed null group (slot 0).
+        h1_null = self._stack_step_batched(state, 'l1_down', self.down_ln1(rep(self.null_1)), active)
+        h2_null = self._stack_step_batched(state, 'l2_down', self.down_ln2(rep(self.null_2)), active)
+        h3_null = self._stack_step_batched(state, 'l3', self.down_ln3(rep(self.null_3)), active)
+        ones = torch.ones(bsz, dtype=torch.long, device=dev)
+        state['l2_sum'], state['l2_cnt'] = h1_null.to(acc), ones.clone()
+        state['l3_sum'], state['l3_cnt'] = h2_null.to(acc), ones.clone()
+        state['h3_last'] = h3_null
+        e2_null = self._stack_step_batched(state, 'l2_up', state['h3_last'] + h2_null, active)
+        state['e2_last'] = e2_null
+        f1_null = self._stack_step_batched(state, 'l1_up', e2_null + h1_null, active)
+        state['f1_last'] = f1_null
+        return state
+
+    def step_batched(self, state, tokens, c1, c2, c3, active=None):
+        """Advance one full-resolution token for the whole batch.
+
+        tokens, c1, c2, c3: B (token ids and their cumulative close events).
+        active: B bool -- sequences still decoding (finished ones are frozen and
+        contribute nothing). Returns logits 1 x B x V."""
+        B = state['bsz']
+        dev = self.r_w_bias.device
+        dt, acc = state['dtype'], state['accum_dtype']
+        check_closes(c1, c2, c3)
+        if active is None:
+            active = torch.ones(B, dtype=torch.bool, device=dev)
+        am = active.view(1, B, 1).to(acc)
+        m1 = c1.bool() & active
+        m2 = c2.bool() & active
+        m3 = c3.bool() & active
+
+        x = self.drop(self.word_emb(tokens.view(1, B)))
+        a_t = self._stack_step_batched(state, 'pre', x, active)
+        res0 = a_t
+        add = a_t.to(acc) * am
+        state['l1_sum'] = add if state['l1_sum'] is None else state['l1_sum'] + add
+        state['l1_cnt'] = state['l1_cnt'] + active.long()
+
+        if bool(m1.any()):
+            cnt = state['l1_cnt'].clamp(min=1).view(1, B, 1).to(acc)
+            g1 = self.down_ln1((state['l1_sum'] / cnt).to(dt))
+            r1 = m1.view(1, B, 1)
+            state['l1_sum'] = torch.where(r1, torch.zeros_like(state['l1_sum']), state['l1_sum'])
+            state['l1_cnt'] = torch.where(m1, torch.zeros_like(state['l1_cnt']), state['l1_cnt'])
+            h1 = self._stack_step_batched(state, 'l1_down', g1, m1)
+            res1 = h1
+            add1 = h1.to(acc) * r1.to(acc)
+            state['l2_sum'] = state['l2_sum'] + add1
+            state['l2_cnt'] = state['l2_cnt'] + m1.long()
+
+            if bool(m2.any()):
+                cnt2 = state['l2_cnt'].clamp(min=1).view(1, B, 1).to(acc)
+                g2 = self.down_ln2((state['l2_sum'] / cnt2).to(dt))
+                r2 = m2.view(1, B, 1)
+                state['l2_sum'] = torch.where(r2, torch.zeros_like(state['l2_sum']), state['l2_sum'])
+                state['l2_cnt'] = torch.where(m2, torch.zeros_like(state['l2_cnt']), state['l2_cnt'])
+                h2 = self._stack_step_batched(state, 'l2_down', g2, m2)
+                res2 = h2
+                add2 = h2.to(acc) * r2.to(acc)
+                state['l3_sum'] = state['l3_sum'] + add2
+                state['l3_cnt'] = state['l3_cnt'] + m2.long()
+
+                if bool(m3.any()):
+                    cnt3 = state['l3_cnt'].clamp(min=1).view(1, B, 1).to(acc)
+                    g3 = self.down_ln3((state['l3_sum'] / cnt3).to(dt))
+                    r3 = m3.view(1, B, 1)
+                    state['l3_sum'] = torch.where(r3, torch.zeros_like(state['l3_sum']), state['l3_sum'])
+                    state['l3_cnt'] = torch.where(m3, torch.zeros_like(state['l3_cnt']), state['l3_cnt'])
+                    h3 = self._stack_step_batched(state, 'l3', g3, m3)
+                    state['h3_last'] = torch.where(r3, h3, state['h3_last'])
+
+                e2 = self._stack_step_batched(state, 'l2_up', state['h3_last'] + res2, m2)
+                state['e2_last'] = torch.where(r2, e2, state['e2_last'])
+
+            f1 = self._stack_step_batched(state, 'l1_up', state['e2_last'] + res1, m1)
+            state['f1_last'] = torch.where(r1, f1, state['f1_last'])
+
+        g0 = self._stack_step_batched(state, 'post', state['f1_last'] + res0, active)
+        return self.final_cast(g0)
+
+    def cached_forward_batched(self, data, c1, c2, c3):
+        """Run the batched cached path over a full T x B sequence. Returns logits
+        T x B x V. Used to check equivalence with the naive `forward`."""
+        T, B = data.size(0), data.size(1)
+        state = self.init_state_batched(B, max_len=T, device=data.device)
+        logits = [self.step_batched(state, data[t], c1[t], c2[t], c3[t])
+                  for t in range(T)]
+        return torch.cat(logits, dim=0)
+
+    # ---- batch-size-1 convenience wrappers (used by the streaming decoders) --
+    def init_state(self):
+        return self.init_state_batched(1)
+
+    def step(self, state, token_id, c1, c2, c3):
+        """Advance one token for a batch-size-1 state. Returns logits 1 x 1 x V."""
+        dev = self.r_w_bias.device
+        t = lambda v: torch.tensor([int(v)], device=dev)
+        return self.step_batched(state, t(token_id), t(c1), t(c2), t(c3))
+
+    def cached_forward(self, data, c1, c2, c3):
+        """Batched cached path restricted to T x 1 (kept for existing callers)."""
+        return self.cached_forward_batched(data, c1, c2, c3)
