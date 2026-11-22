@@ -1,0 +1,1917 @@
+{
+  "runtime": {
+    "python": "3.10.21",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+    "torch": "2.13.0+cpu",
+    "cpu": {
+      "model name": "AMD EPYC 9V74 80-Core Processor",
+      "flags": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw topoext vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx512_bf16 clzero xsaveerptr arat npt nrip_save tsc_scale vmcb_clean flushbyasid pausefilter pfthreshold v_vmsave_vmload avx512vbmi umip avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid fsrm arch_capabilities"
+    },
+    "threads": 1,
+    "interop_threads": 9,
+    "mkldnn": true,
+    "torch_build": "PyTorch built with:\n  - GCC 13.3\n  - C++ Version: 202002\n  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v3.12.0 (Git Hash 80afa71049cd69a3df32adcccb623b12cd7baa22)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: AVX512\n  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=cf30153c4c131c8164ee7798e5022d810682e2cb, CUDA_FLAGS= -DLIBCUDACXX_ENABLE_SIMPLIFIED_COMPLEX_OPERATIONS -Xfatbin -compress-all  -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DDISABLE_CUSPARSE_DEPRECATED -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -DC10_NODEPRECATED, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DUSE_FBGEMM -DUSE_PYTORCH_QNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.13.0, USE_CUDA=0, USE_CUDNN=OFF, USE_CUSPARSELT=OFF, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+    "cuda": null,
+    "cuda_devices": []
+  },
+  "case": "docs/inference_progress/numerics/retained-714ff45be2b34b02.json",
+  "trace": {
+    "dtype": "torch.float32",
+    "final_prefix": {
+      "rows": 2,
+      "max_abs_error": 6.723403930664062e-05,
+      "historical_threshold": 9.426647011423483e-06,
+      "within_historical_threshold": false,
+      "greedy_mismatches": 0,
+      "min_naive_margin": 2.5499627590179443,
+      "rows_with_margin_over_twice_error": 2,
+      "rows_without_margin_certificate": 0
+    },
+    "all_positions_vs_one_full_forward": {
+      "rows": 4078,
+      "max_abs_error": 7.104873657226562e-05,
+      "historical_threshold": 2.0675710402429104e-05,
+      "within_historical_threshold": false,
+      "greedy_mismatches": 0,
+      "min_naive_margin": 0.0007064342498779297,
+      "rows_with_margin_over_twice_error": 4078,
+      "rows_without_margin_certificate": 0
+    },
+    "first_observed_output_difference": {
+      "module": "stacks.l1_down.0.dec_attn.qkv_net",
+      "token_position": -1,
+      "input_error": 0.0,
+      "output_error": 3.5762786865234375e-07
+    },
+    "modules": {
+      "stacks.pre.0.dec_attn.qkv_net": {
+        "input_max": 0.0,
+        "output_max": 7.152557373046875e-07,
+        "output_worst": {
+          "token_position": 1,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 33
+        }
+      },
+      "stacks.pre.0.dec_attn.o_net": {
+        "input_max": 4.76837158203125e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 1819,
+          "member": 0,
+          "ordinal": 1819,
+          "feature": 38
+        },
+        "output_worst": {
+          "token_position": 1819,
+          "member": 0,
+          "ordinal": 1819,
+          "feature": 32
+        }
+      },
+      "stacks.pre.0.dec_attn.layer_norm": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 9.834766387939453e-07,
+        "input_worst": {
+          "token_position": 1819,
+          "member": 0,
+          "ordinal": 1819,
+          "feature": 32
+        },
+        "output_worst": {
+          "token_position": 1819,
+          "member": 0,
+          "ordinal": 1819,
+          "feature": 32
+        }
+      },
+      "stacks.pre.0.pos_ff.CoreNet.0": {
+        "input_max": 9.834766387939453e-07,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 1819,
+          "member": 0,
+          "ordinal": 1819,
+          "feature": 32
+        },
+        "output_worst": {
+          "token_position": 894,
+          "member": 0,
+          "ordinal": 894,
+          "feature": 48
+        }
+      },
+      "stacks.pre.0.pos_ff.CoreNet.1": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 894,
+          "member": 0,
+          "ordinal": 894,
+          "feature": 48
+        },
+        "output_worst": {
+          "token_position": 658,
+          "member": 1,
+          "ordinal": 658,
+          "feature": 29
+        }
+      },
+      "stacks.pre.0.pos_ff.CoreNet.3": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 9.5367431640625e-07,
+        "input_worst": {
+          "token_position": 658,
+          "member": 1,
+          "ordinal": 658,
+          "feature": 29
+        },
+        "output_worst": {
+          "token_position": 2024,
+          "member": 1,
+          "ordinal": 2024,
+          "feature": 29
+        }
+      },
+      "stacks.pre.0.pos_ff.layer_norm": {
+        "input_max": 9.5367431640625e-07,
+        "output_max": 9.5367431640625e-07,
+        "input_worst": {
+          "token_position": 244,
+          "member": 0,
+          "ordinal": 244,
+          "feature": 19
+        },
+        "output_worst": {
+          "token_position": 19,
+          "member": 1,
+          "ordinal": 19,
+          "feature": 39
+        }
+      },
+      "stacks.pre.1.dec_attn.qkv_net": {
+        "input_max": 9.5367431640625e-07,
+        "output_max": 1.6689300537109375e-06,
+        "input_worst": {
+          "token_position": 19,
+          "member": 1,
+          "ordinal": 19,
+          "feature": 39
+        },
+        "output_worst": {
+          "token_position": 1355,
+          "member": 0,
+          "ordinal": 1355,
+          "feature": 15
+        }
+      },
+      "stacks.pre.1.dec_attn.o_net": {
+        "input_max": 2.1457672119140625e-06,
+        "output_max": 7.152557373046875e-07,
+        "input_worst": {
+          "token_position": 1506,
+          "member": 0,
+          "ordinal": 1506,
+          "feature": 36
+        },
+        "output_worst": {
+          "token_position": 655,
+          "member": 0,
+          "ordinal": 655,
+          "feature": 10
+        }
+      },
+      "stacks.pre.1.dec_attn.layer_norm": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 962,
+          "member": 0,
+          "ordinal": 962,
+          "feature": 51
+        },
+        "output_worst": {
+          "token_position": 1201,
+          "member": 0,
+          "ordinal": 1201,
+          "feature": 31
+        }
+      },
+      "stacks.pre.1.pos_ff.CoreNet.0": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 1201,
+          "member": 0,
+          "ordinal": 1201,
+          "feature": 31
+        },
+        "output_worst": {
+          "token_position": 1446,
+          "member": 1,
+          "ordinal": 1446,
+          "feature": 90
+        }
+      },
+      "stacks.pre.1.pos_ff.CoreNet.1": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.6689300537109375e-06,
+        "input_worst": {
+          "token_position": 1446,
+          "member": 1,
+          "ordinal": 1446,
+          "feature": 90
+        },
+        "output_worst": {
+          "token_position": 158,
+          "member": 0,
+          "ordinal": 158,
+          "feature": 90
+        }
+      },
+      "stacks.pre.1.pos_ff.CoreNet.3": {
+        "input_max": 1.6689300537109375e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 158,
+          "member": 0,
+          "ordinal": 158,
+          "feature": 90
+        },
+        "output_worst": {
+          "token_position": 1301,
+          "member": 1,
+          "ordinal": 1301,
+          "feature": 3
+        }
+      },
+      "stacks.pre.1.pos_ff.layer_norm": {
+        "input_max": 1.3113021850585938e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 1301,
+          "member": 1,
+          "ordinal": 1301,
+          "feature": 3
+        },
+        "output_worst": {
+          "token_position": 960,
+          "member": 1,
+          "ordinal": 960,
+          "feature": 9
+        }
+      },
+      "stacks.l1_down.0.dec_attn.qkv_net": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.6689300537109375e-06,
+        "output_worst": {
+          "token_position": 290,
+          "member": 0,
+          "ordinal": 57,
+          "feature": 58
+        },
+        "input_worst": {
+          "token_position": 975,
+          "member": 0,
+          "ordinal": 198,
+          "feature": 57
+        }
+      },
+      "stacks.l1_down.0.dec_attn.o_net": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 4.76837158203125e-07,
+        "input_worst": {
+          "token_position": 1895,
+          "member": 0,
+          "ordinal": 379,
+          "feature": 29
+        },
+        "output_worst": {
+          "token_position": 230,
+          "member": 1,
+          "ordinal": 45,
+          "feature": 4
+        }
+      },
+      "stacks.l1_down.0.dec_attn.layer_norm": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 9.5367431640625e-07,
+        "input_worst": {
+          "token_position": 557,
+          "member": 0,
+          "ordinal": 106,
+          "feature": 58
+        },
+        "output_worst": {
+          "token_position": 557,
+          "member": 0,
+          "ordinal": 106,
+          "feature": 58
+        }
+      },
+      "stacks.l1_down.0.pos_ff.CoreNet.0": {
+        "input_max": 9.5367431640625e-07,
+        "output_max": 1.0728836059570312e-06,
+        "input_worst": {
+          "token_position": 557,
+          "member": 0,
+          "ordinal": 106,
+          "feature": 58
+        },
+        "output_worst": {
+          "token_position": 839,
+          "member": 1,
+          "ordinal": 170,
+          "feature": 105
+        }
+      },
+      "stacks.l1_down.0.pos_ff.CoreNet.1": {
+        "input_max": 1.0728836059570312e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 839,
+          "member": 1,
+          "ordinal": 170,
+          "feature": 105
+        },
+        "output_worst": {
+          "token_position": 939,
+          "member": 1,
+          "ordinal": 187,
+          "feature": 105
+        }
+      },
+      "stacks.l1_down.0.pos_ff.CoreNet.3": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 6.556510925292969e-07,
+        "input_worst": {
+          "token_position": 939,
+          "member": 1,
+          "ordinal": 187,
+          "feature": 105
+        },
+        "output_worst": {
+          "token_position": 189,
+          "member": 1,
+          "ordinal": 37,
+          "feature": 12
+        }
+      },
+      "stacks.l1_down.0.pos_ff.layer_norm": {
+        "input_max": 1.430511474609375e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 1519,
+          "member": 1,
+          "ordinal": 312,
+          "feature": 58
+        },
+        "output_worst": {
+          "token_position": 47,
+          "member": 0,
+          "ordinal": 8,
+          "feature": 0
+        }
+      },
+      "stacks.l1_down.1.dec_attn.qkv_net": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.430511474609375e-06,
+        "input_worst": {
+          "token_position": 47,
+          "member": 0,
+          "ordinal": 8,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 1186,
+          "member": 1,
+          "ordinal": 235,
+          "feature": 42
+        }
+      },
+      "stacks.l1_down.1.dec_attn.o_net": {
+        "input_max": 1.3113021850585938e-06,
+        "output_max": 5.364418029785156e-07,
+        "input_worst": {
+          "token_position": 1813,
+          "member": 0,
+          "ordinal": 365,
+          "feature": 43
+        },
+        "output_worst": {
+          "token_position": 1093,
+          "member": 0,
+          "ordinal": 221,
+          "feature": 20
+        }
+      },
+      "stacks.l1_down.1.dec_attn.layer_norm": {
+        "input_max": 1.430511474609375e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 1737,
+          "member": 1,
+          "ordinal": 355,
+          "feature": 58
+        },
+        "output_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        }
+      },
+      "stacks.l1_down.1.pos_ff.CoreNet.0": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 8.344650268554688e-07,
+        "input_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 410,
+          "member": 0,
+          "ordinal": 79,
+          "feature": 60
+        }
+      },
+      "stacks.l1_down.1.pos_ff.CoreNet.1": {
+        "input_max": 8.344650268554688e-07,
+        "output_max": 1.0728836059570312e-06,
+        "input_worst": {
+          "token_position": 410,
+          "member": 0,
+          "ordinal": 79,
+          "feature": 60
+        },
+        "output_worst": {
+          "token_position": 410,
+          "member": 0,
+          "ordinal": 79,
+          "feature": 60
+        }
+      },
+      "stacks.l1_down.1.pos_ff.CoreNet.3": {
+        "input_max": 1.0728836059570312e-06,
+        "output_max": 6.556510925292969e-07,
+        "input_worst": {
+          "token_position": 410,
+          "member": 0,
+          "ordinal": 79,
+          "feature": 60
+        },
+        "output_worst": {
+          "token_position": 892,
+          "member": 0,
+          "ordinal": 182,
+          "feature": 55
+        }
+      },
+      "stacks.l1_down.1.pos_ff.layer_norm": {
+        "input_max": 1.430511474609375e-06,
+        "output_max": 1.430511474609375e-06,
+        "input_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        }
+      },
+      "stacks.l2_down.0.dec_attn.qkv_net": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.430511474609375e-06,
+        "output_worst": {
+          "token_position": 872,
+          "member": 0,
+          "ordinal": 70,
+          "feature": 42
+        },
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        }
+      },
+      "stacks.l2_down.0.dec_attn.o_net": {
+        "input_max": 7.748603820800781e-07,
+        "output_max": 5.364418029785156e-07,
+        "input_worst": {
+          "token_position": 11,
+          "member": 1,
+          "ordinal": 2,
+          "feature": 13
+        },
+        "output_worst": {
+          "token_position": 20,
+          "member": 0,
+          "ordinal": 1,
+          "feature": 36
+        }
+      },
+      "stacks.l2_down.0.dec_attn.layer_norm": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        }
+      },
+      "stacks.l2_down.0.pos_ff.CoreNet.0": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.0728836059570312e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 1447,
+          "member": 1,
+          "ordinal": 114,
+          "feature": 52
+        }
+      },
+      "stacks.l2_down.0.pos_ff.CoreNet.1": {
+        "input_max": 1.0728836059570312e-06,
+        "output_max": 8.344650268554688e-07,
+        "input_worst": {
+          "token_position": 1447,
+          "member": 1,
+          "ordinal": 114,
+          "feature": 52
+        },
+        "output_worst": {
+          "token_position": -1,
+          "member": 0,
+          "ordinal": 0,
+          "feature": 68
+        }
+      },
+      "stacks.l2_down.0.pos_ff.CoreNet.3": {
+        "input_max": 8.344650268554688e-07,
+        "output_max": 5.364418029785156e-07,
+        "input_worst": {
+          "token_position": -1,
+          "member": 0,
+          "ordinal": 0,
+          "feature": 68
+        },
+        "output_worst": {
+          "token_position": 1945,
+          "member": 1,
+          "ordinal": 152,
+          "feature": 15
+        }
+      },
+      "stacks.l2_down.0.pos_ff.layer_norm": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.0728836059570312e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 846,
+          "member": 1,
+          "ordinal": 68,
+          "feature": 4
+        }
+      },
+      "stacks.l3.0.dec_attn.qkv_net": {
+        "input_max": 1.2516975402832031e-06,
+        "output_max": 9.5367431640625e-07,
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 43
+        },
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        }
+      },
+      "stacks.l3.0.dec_attn.o_net": {
+        "input_max": 7.152557373046875e-07,
+        "output_max": 4.76837158203125e-07,
+        "input_worst": {
+          "token_position": 11,
+          "member": 1,
+          "ordinal": 2,
+          "feature": 29
+        },
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 7
+        }
+      },
+      "stacks.l3.0.dec_attn.layer_norm": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        }
+      },
+      "stacks.l3.0.pos_ff.CoreNet.0": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 104
+        }
+      },
+      "stacks.l3.0.pos_ff.CoreNet.1": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.3113021850585938e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 104
+        },
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 104
+        }
+      },
+      "stacks.l3.0.pos_ff.CoreNet.3": {
+        "input_max": 1.3113021850585938e-06,
+        "output_max": 5.960464477539062e-07,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 104
+        },
+        "output_worst": {
+          "token_position": 63,
+          "member": 1,
+          "ordinal": 4,
+          "feature": 21
+        }
+      },
+      "stacks.l3.0.pos_ff.layer_norm": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 1.0728836059570312e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 41
+        },
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 41
+        }
+      },
+      "stacks.l2_up.0.dec_attn.qkv_net": {
+        "input_max": 1.9073486328125e-06,
+        "output_max": 1.6689300537109375e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 1286,
+          "member": 1,
+          "ordinal": 99,
+          "feature": 23
+        }
+      },
+      "stacks.l2_up.0.dec_attn.o_net": {
+        "input_max": 2.2649765014648438e-06,
+        "output_max": 1.3113021850585938e-06,
+        "input_worst": {
+          "token_position": 72,
+          "member": 1,
+          "ordinal": 6,
+          "feature": 0
+        },
+        "output_worst": {
+          "token_position": 469,
+          "member": 1,
+          "ordinal": 36,
+          "feature": 29
+        }
+      },
+      "stacks.l2_up.0.dec_attn.layer_norm": {
+        "input_max": 2.086162567138672e-06,
+        "output_max": 1.1324882507324219e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 5
+        },
+        "output_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        }
+      },
+      "stacks.l2_up.0.pos_ff.CoreNet.0": {
+        "input_max": 1.1324882507324219e-06,
+        "output_max": 9.5367431640625e-07,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 297,
+          "member": 1,
+          "ordinal": 22,
+          "feature": 45
+        }
+      },
+      "stacks.l2_up.0.pos_ff.CoreNet.1": {
+        "input_max": 9.5367431640625e-07,
+        "output_max": 1.0728836059570312e-06,
+        "input_worst": {
+          "token_position": 297,
+          "member": 1,
+          "ordinal": 22,
+          "feature": 45
+        },
+        "output_worst": {
+          "token_position": 297,
+          "member": 1,
+          "ordinal": 22,
+          "feature": 45
+        }
+      },
+      "stacks.l2_up.0.pos_ff.CoreNet.3": {
+        "input_max": 1.0728836059570312e-06,
+        "output_max": 6.556510925292969e-07,
+        "input_worst": {
+          "token_position": 297,
+          "member": 1,
+          "ordinal": 22,
+          "feature": 45
+        },
+        "output_worst": {
+          "token_position": 1141,
+          "member": 0,
+          "ordinal": 92,
+          "feature": 52
+        }
+      },
+      "stacks.l2_up.0.pos_ff.layer_norm": {
+        "input_max": 1.2218952178955078e-06,
+        "output_max": 1.430511474609375e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 5
+        },
+        "output_worst": {
+          "token_position": 1146,
+          "member": 1,
+          "ordinal": 89,
+          "feature": 20
+        }
+      },
+      "stacks.l1_up.0.dec_attn.qkv_net": {
+        "input_max": 1.9073486328125e-06,
+        "output_max": 1.9073486328125e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 2,
+          "feature": 56
+        },
+        "output_worst": {
+          "token_position": 55,
+          "member": 0,
+          "ordinal": 10,
+          "feature": 47
+        }
+      },
+      "stacks.l1_up.0.dec_attn.o_net": {
+        "input_max": 1.9073486328125e-06,
+        "output_max": 9.5367431640625e-07,
+        "input_worst": {
+          "token_position": 1451,
+          "member": 1,
+          "ordinal": 297,
+          "feature": 63
+        },
+        "output_worst": {
+          "token_position": 72,
+          "member": 1,
+          "ordinal": 16,
+          "feature": 21
+        }
+      },
+      "stacks.l1_up.0.dec_attn.layer_norm": {
+        "input_max": 1.9073486328125e-06,
+        "output_max": 1.430511474609375e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 1,
+          "ordinal": 2,
+          "feature": 56
+        },
+        "output_worst": {
+          "token_position": 1987,
+          "member": 1,
+          "ordinal": 402,
+          "feature": 61
+        }
+      },
+      "stacks.l1_up.0.pos_ff.CoreNet.0": {
+        "input_max": 1.430511474609375e-06,
+        "output_max": 1.1920928955078125e-06,
+        "input_worst": {
+          "token_position": 1987,
+          "member": 1,
+          "ordinal": 402,
+          "feature": 61
+        },
+        "output_worst": {
+          "token_position": 31,
+          "member": 0,
+          "ordinal": 5,
+          "feature": 43
+        }
+      },
+      "stacks.l1_up.0.pos_ff.CoreNet.1": {
+        "input_max": 1.1920928955078125e-06,
+        "output_max": 9.5367431640625e-07,
+        "input_worst": {
+          "token_position": 31,
+          "member": 0,
+          "ordinal": 5,
+          "feature": 43
+        },
+        "output_worst": {
+          "token_position": 131,
+          "member": 0,
+          "ordinal": 25,
+          "feature": 96
+        }
+      },
+      "stacks.l1_up.0.pos_ff.CoreNet.3": {
+        "input_max": 9.5367431640625e-07,
+        "output_max": 5.960464477539062e-07,
+        "input_worst": {
+          "token_position": 131,
+          "member": 0,
+          "ordinal": 25,
+          "feature": 96
+        },
+        "output_worst": {
+          "token_position": 1957,
+          "member": 0,
+          "ordinal": 391,
+          "feature": 46
+        }
+      },
+      "stacks.l1_up.0.pos_ff.layer_norm": {
+        "input_max": 1.430511474609375e-06,
+        "output_max": 1.430511474609375e-06,
+        "input_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        }
+      },
+      "stacks.l1_up.1.dec_attn.qkv_net": {
+        "input_max": 1.430511474609375e-06,
+        "output_max": 1.6689300537109375e-06,
+        "input_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 135,
+          "member": 0,
+          "ordinal": 26,
+          "feature": 11
+        }
+      },
+      "stacks.l1_up.1.dec_attn.o_net": {
+        "input_max": 1.3113021850585938e-06,
+        "output_max": 7.748603820800781e-07,
+        "input_worst": {
+          "token_position": 1778,
+          "member": 1,
+          "ordinal": 364,
+          "feature": 47
+        },
+        "output_worst": {
+          "token_position": 1396,
+          "member": 1,
+          "ordinal": 285,
+          "feature": 61
+        }
+      },
+      "stacks.l1_up.1.dec_attn.layer_norm": {
+        "input_max": 1.5497207641601562e-06,
+        "output_max": 1.430511474609375e-06,
+        "input_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        }
+      },
+      "stacks.l1_up.1.pos_ff.CoreNet.0": {
+        "input_max": 1.430511474609375e-06,
+        "output_max": 1.0728836059570312e-06,
+        "input_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 368,
+          "member": 1,
+          "ordinal": 71,
+          "feature": 93
+        }
+      },
+      "stacks.l1_up.1.pos_ff.CoreNet.1": {
+        "input_max": 1.0728836059570312e-06,
+        "output_max": 9.5367431640625e-07,
+        "input_worst": {
+          "token_position": 368,
+          "member": 1,
+          "ordinal": 71,
+          "feature": 93
+        },
+        "output_worst": {
+          "token_position": 31,
+          "member": 0,
+          "ordinal": 5,
+          "feature": 101
+        }
+      },
+      "stacks.l1_up.1.pos_ff.CoreNet.3": {
+        "input_max": 9.5367431640625e-07,
+        "output_max": 7.152557373046875e-07,
+        "input_worst": {
+          "token_position": 31,
+          "member": 0,
+          "ordinal": 5,
+          "feature": 101
+        },
+        "output_worst": {
+          "token_position": 67,
+          "member": 0,
+          "ordinal": 12,
+          "feature": 16
+        }
+      },
+      "stacks.l1_up.1.pos_ff.layer_norm": {
+        "input_max": 1.5795230865478516e-06,
+        "output_max": 1.4901161193847656e-06,
+        "input_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        },
+        "output_worst": {
+          "token_position": 4,
+          "member": 1,
+          "ordinal": 1,
+          "feature": 53
+        }
+      },
+      "stacks.post.0.dec_attn.qkv_net": {
+        "input_max": 1.9073486328125e-06,
+        "output_max": 3.337860107421875e-06,
+        "input_worst": {
+          "token_position": 9,
+          "member": 0,
+          "ordinal": 9,
+          "feature": 4
+        },
+        "output_worst": {
+          "token_position": 1205,
+          "member": 0,
+          "ordinal": 1205,
+          "feature": 25
+        }
+      },
+      "stacks.post.0.dec_attn.o_net": {
+        "input_max": 2.193450927734375e-05,
+        "output_max": 1.2516975402832031e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 0,
+          "ordinal": 2037,
+          "feature": 22
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 0,
+          "ordinal": 2037,
+          "feature": 54
+        }
+      },
+      "stacks.post.0.dec_attn.layer_norm": {
+        "input_max": 1.2636184692382812e-05,
+        "output_max": 7.748603820800781e-06,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 0,
+          "ordinal": 2037,
+          "feature": 54
+        },
+        "output_worst": {
+          "token_position": 1801,
+          "member": 0,
+          "ordinal": 1801,
+          "feature": 61
+        }
+      },
+      "stacks.post.0.pos_ff.CoreNet.0": {
+        "input_max": 7.748603820800781e-06,
+        "output_max": 1.0788440704345703e-05,
+        "input_worst": {
+          "token_position": 1801,
+          "member": 0,
+          "ordinal": 1801,
+          "feature": 61
+        },
+        "output_worst": {
+          "token_position": 1926,
+          "member": 0,
+          "ordinal": 1926,
+          "feature": 112
+        }
+      },
+      "stacks.post.0.pos_ff.CoreNet.1": {
+        "input_max": 1.0788440704345703e-05,
+        "output_max": 7.957220077514648e-06,
+        "input_worst": {
+          "token_position": 1926,
+          "member": 0,
+          "ordinal": 1926,
+          "feature": 112
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 112
+        }
+      },
+      "stacks.post.0.pos_ff.CoreNet.3": {
+        "input_max": 7.957220077514648e-06,
+        "output_max": 4.462897777557373e-06,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 112
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 4
+        }
+      },
+      "stacks.post.0.pos_ff.layer_norm": {
+        "input_max": 1.0460615158081055e-05,
+        "output_max": 1.043081283569336e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 27
+        },
+        "output_worst": {
+          "token_position": 1600,
+          "member": 1,
+          "ordinal": 1600,
+          "feature": 27
+        }
+      },
+      "stacks.post.1.dec_attn.qkv_net": {
+        "input_max": 1.043081283569336e-05,
+        "output_max": 1.4662742614746094e-05,
+        "input_worst": {
+          "token_position": 1600,
+          "member": 1,
+          "ordinal": 1600,
+          "feature": 27
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 16
+        }
+      },
+      "stacks.post.1.dec_attn.o_net": {
+        "input_max": 7.547438144683838e-06,
+        "output_max": 4.76837158203125e-06,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 28
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 15
+        }
+      },
+      "stacks.post.1.dec_attn.layer_norm": {
+        "input_max": 1.2040138244628906e-05,
+        "output_max": 1.1146068572998047e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 15
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 15
+        }
+      },
+      "stacks.post.1.pos_ff.CoreNet.0": {
+        "input_max": 1.1146068572998047e-05,
+        "output_max": 1.6197562217712402e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 15
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 61
+        }
+      },
+      "stacks.post.1.pos_ff.CoreNet.1": {
+        "input_max": 1.6197562217712402e-05,
+        "output_max": 1.519918441772461e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 61
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 109
+        }
+      },
+      "stacks.post.1.pos_ff.CoreNet.3": {
+        "input_max": 1.519918441772461e-05,
+        "output_max": 1.17570161819458e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 109
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 48
+        }
+      },
+      "stacks.post.1.pos_ff.layer_norm": {
+        "input_max": 2.014636993408203e-05,
+        "output_max": 1.8358230590820312e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 15
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 15
+        }
+      },
+      "final_cast": {
+        "input_max": 1.8358230590820312e-05,
+        "output_max": 7.104873657226562e-05,
+        "input_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 15
+        },
+        "output_worst": {
+          "token_position": 2037,
+          "member": 1,
+          "ordinal": 2037,
+          "feature": 1
+        }
+      }
+    },
+    "same_input_full_vs_row": {
+      "stacks.pre.0.dec_attn.qkv_net": {
+        "same_input_max_error": 7.152557373046875e-07,
+        "worst_index": [
+          1,
+          1,
+          33
+        ]
+      },
+      "stacks.pre.0.dec_attn.o_net": {
+        "same_input_max_error": 4.172325134277344e-07,
+        "worst_index": [
+          1197,
+          0,
+          32
+        ]
+      },
+      "stacks.pre.0.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.pre.0.pos_ff.CoreNet.0": {
+        "same_input_max_error": 1.1920928955078125e-06,
+        "worst_index": [
+          1921,
+          1,
+          29
+        ]
+      },
+      "stacks.pre.0.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.pre.0.pos_ff.CoreNet.3": {
+        "same_input_max_error": 6.556510925292969e-07,
+        "worst_index": [
+          792,
+          1,
+          46
+        ]
+      },
+      "stacks.pre.0.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.pre.1.dec_attn.qkv_net": {
+        "same_input_max_error": 1.430511474609375e-06,
+        "worst_index": [
+          984,
+          0,
+          8
+        ]
+      },
+      "stacks.pre.1.dec_attn.o_net": {
+        "same_input_max_error": 5.364418029785156e-07,
+        "worst_index": [
+          77,
+          0,
+          62
+        ]
+      },
+      "stacks.pre.1.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.pre.1.pos_ff.CoreNet.0": {
+        "same_input_max_error": 1.1920928955078125e-06,
+        "worst_index": [
+          6,
+          0,
+          103
+        ]
+      },
+      "stacks.pre.1.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.pre.1.pos_ff.CoreNet.3": {
+        "same_input_max_error": 8.344650268554688e-07,
+        "worst_index": [
+          1039,
+          0,
+          51
+        ]
+      },
+      "stacks.pre.1.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_down.0.dec_attn.qkv_net": {
+        "same_input_max_error": 1.430511474609375e-06,
+        "worst_index": [
+          57,
+          0,
+          58
+        ]
+      },
+      "stacks.l1_down.0.dec_attn.o_net": {
+        "same_input_max_error": 3.5762786865234375e-07,
+        "worst_index": [
+          45,
+          1,
+          4
+        ]
+      },
+      "stacks.l1_down.0.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_down.0.pos_ff.CoreNet.0": {
+        "same_input_max_error": 9.5367431640625e-07,
+        "worst_index": [
+          187,
+          1,
+          105
+        ]
+      },
+      "stacks.l1_down.0.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_down.0.pos_ff.CoreNet.3": {
+        "same_input_max_error": 5.364418029785156e-07,
+        "worst_index": [
+          312,
+          1,
+          58
+        ]
+      },
+      "stacks.l1_down.0.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_down.1.dec_attn.qkv_net": {
+        "same_input_max_error": 1.430511474609375e-06,
+        "worst_index": [
+          235,
+          1,
+          42
+        ]
+      },
+      "stacks.l1_down.1.dec_attn.o_net": {
+        "same_input_max_error": 4.172325134277344e-07,
+        "worst_index": [
+          219,
+          0,
+          26
+        ]
+      },
+      "stacks.l1_down.1.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_down.1.pos_ff.CoreNet.0": {
+        "same_input_max_error": 7.152557373046875e-07,
+        "worst_index": [
+          56,
+          0,
+          64
+        ]
+      },
+      "stacks.l1_down.1.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_down.1.pos_ff.CoreNet.3": {
+        "same_input_max_error": 5.364418029785156e-07,
+        "worst_index": [
+          296,
+          1,
+          4
+        ]
+      },
+      "stacks.l1_down.1.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l2_down.0.dec_attn.qkv_net": {
+        "same_input_max_error": 1.430511474609375e-06,
+        "worst_index": [
+          99,
+          1,
+          35
+        ]
+      },
+      "stacks.l2_down.0.dec_attn.o_net": {
+        "same_input_max_error": 4.76837158203125e-07,
+        "worst_index": [
+          154,
+          0,
+          15
+        ]
+      },
+      "stacks.l2_down.0.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l2_down.0.pos_ff.CoreNet.0": {
+        "same_input_max_error": 1.0728836059570312e-06,
+        "worst_index": [
+          114,
+          1,
+          52
+        ]
+      },
+      "stacks.l2_down.0.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l2_down.0.pos_ff.CoreNet.3": {
+        "same_input_max_error": 5.960464477539062e-07,
+        "worst_index": [
+          127,
+          0,
+          15
+        ]
+      },
+      "stacks.l2_down.0.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l3.0.dec_attn.qkv_net": {
+        "same_input_max_error": 9.5367431640625e-07,
+        "worst_index": [
+          28,
+          0,
+          106
+        ]
+      },
+      "stacks.l3.0.dec_attn.o_net": {
+        "same_input_max_error": 4.172325134277344e-07,
+        "worst_index": [
+          56,
+          1,
+          30
+        ]
+      },
+      "stacks.l3.0.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l3.0.pos_ff.CoreNet.0": {
+        "same_input_max_error": 8.344650268554688e-07,
+        "worst_index": [
+          4,
+          0,
+          51
+        ]
+      },
+      "stacks.l3.0.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l3.0.pos_ff.CoreNet.3": {
+        "same_input_max_error": 7.152557373046875e-07,
+        "worst_index": [
+          4,
+          1,
+          21
+        ]
+      },
+      "stacks.l3.0.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l2_up.0.dec_attn.qkv_net": {
+        "same_input_max_error": 1.6689300537109375e-06,
+        "worst_index": [
+          124,
+          0,
+          20
+        ]
+      },
+      "stacks.l2_up.0.dec_attn.o_net": {
+        "same_input_max_error": 8.344650268554688e-07,
+        "worst_index": [
+          66,
+          1,
+          8
+        ]
+      },
+      "stacks.l2_up.0.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l2_up.0.pos_ff.CoreNet.0": {
+        "same_input_max_error": 7.152557373046875e-07,
+        "worst_index": [
+          4,
+          1,
+          25
+        ]
+      },
+      "stacks.l2_up.0.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l2_up.0.pos_ff.CoreNet.3": {
+        "same_input_max_error": 5.364418029785156e-07,
+        "worst_index": [
+          153,
+          0,
+          33
+        ]
+      },
+      "stacks.l2_up.0.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_up.0.dec_attn.qkv_net": {
+        "same_input_max_error": 1.9073486328125e-06,
+        "worst_index": [
+          10,
+          0,
+          47
+        ]
+      },
+      "stacks.l1_up.0.dec_attn.o_net": {
+        "same_input_max_error": 7.152557373046875e-07,
+        "worst_index": [
+          65,
+          0,
+          23
+        ]
+      },
+      "stacks.l1_up.0.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_up.0.pos_ff.CoreNet.0": {
+        "same_input_max_error": 1.1920928955078125e-06,
+        "worst_index": [
+          5,
+          0,
+          43
+        ]
+      },
+      "stacks.l1_up.0.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_up.0.pos_ff.CoreNet.3": {
+        "same_input_max_error": 4.76837158203125e-07,
+        "worst_index": [
+          115,
+          0,
+          23
+        ]
+      },
+      "stacks.l1_up.0.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_up.1.dec_attn.qkv_net": {
+        "same_input_max_error": 1.430511474609375e-06,
+        "worst_index": [
+          26,
+          0,
+          11
+        ]
+      },
+      "stacks.l1_up.1.dec_attn.o_net": {
+        "same_input_max_error": 5.960464477539062e-07,
+        "worst_index": [
+          295,
+          0,
+          6
+        ]
+      },
+      "stacks.l1_up.1.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_up.1.pos_ff.CoreNet.0": {
+        "same_input_max_error": 8.344650268554688e-07,
+        "worst_index": [
+          111,
+          1,
+          10
+        ]
+      },
+      "stacks.l1_up.1.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.l1_up.1.pos_ff.CoreNet.3": {
+        "same_input_max_error": 5.364418029785156e-07,
+        "worst_index": [
+          0,
+          0,
+          27
+        ]
+      },
+      "stacks.l1_up.1.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.post.0.dec_attn.qkv_net": {
+        "same_input_max_error": 2.86102294921875e-06,
+        "worst_index": [
+          1205,
+          0,
+          25
+        ]
+      },
+      "stacks.post.0.dec_attn.o_net": {
+        "same_input_max_error": 1.1920928955078125e-06,
+        "worst_index": [
+          16,
+          1,
+          4
+        ]
+      },
+      "stacks.post.0.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.post.0.pos_ff.CoreNet.0": {
+        "same_input_max_error": 1.1920928955078125e-06,
+        "worst_index": [
+          181,
+          1,
+          7
+        ]
+      },
+      "stacks.post.0.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.post.0.pos_ff.CoreNet.3": {
+        "same_input_max_error": 9.5367431640625e-07,
+        "worst_index": [
+          1330,
+          0,
+          7
+        ]
+      },
+      "stacks.post.0.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.post.1.dec_attn.qkv_net": {
+        "same_input_max_error": 1.6689300537109375e-06,
+        "worst_index": [
+          688,
+          1,
+          37
+        ]
+      },
+      "stacks.post.1.dec_attn.o_net": {
+        "same_input_max_error": 4.76837158203125e-07,
+        "worst_index": [
+          63,
+          1,
+          61
+        ]
+      },
+      "stacks.post.1.dec_attn.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.post.1.pos_ff.CoreNet.0": {
+        "same_input_max_error": 1.1920928955078125e-06,
+        "worst_index": [
+          1765,
+          0,
+          46
+        ]
+      },
+      "stacks.post.1.pos_ff.CoreNet.1": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "stacks.post.1.pos_ff.CoreNet.3": {
+        "same_input_max_error": 1.1920928955078125e-06,
+        "worst_index": [
+          1630,
+          0,
+          48
+        ]
+      },
+      "stacks.post.1.pos_ff.layer_norm": {
+        "same_input_max_error": 0.0,
+        "worst_index": [
+          0,
+          0,
+          0
+        ]
+      },
+      "final_cast": {
+        "same_input_max_error": 4.76837158203125e-06,
+        "worst_index": [
+          1417,
+          0,
+          1
+        ]
+      }
+    }
+  }
+}

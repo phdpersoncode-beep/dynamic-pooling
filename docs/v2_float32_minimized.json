@@ -1,0 +1,30 @@
+{
+  "reproduces_on_resumed_runtime": false,
+  "cases": [
+    {
+      "source": "docs/v2_long/overfit32-1024-torch.float32.json",
+      "prefix": 17,
+      "max_abs": 4.76837158203125e-06,
+      "bound": 1.1665893907775171e-05,
+      "greedy_matches": true,
+      "exceeds_bound": false
+    },
+    {
+      "source": "docs/v2_long/overfit32-2048-torch.float32.json",
+      "prefix": 17,
+      "max_abs": 4.76837158203125e-06,
+      "bound": 1.1665893907775171e-05,
+      "greedy_matches": true,
+      "exceeds_bound": false
+    },
+    {
+      "source": "docs/v2_long/overfit32-512-torch.float32.json",
+      "prefix": 17,
+      "max_abs": 4.76837158203125e-06,
+      "bound": 1.1665893907775171e-05,
+      "greedy_matches": true,
+      "exceeds_bound": false
+    }
+  ],
+  "note": "Historical failures retained; no threshold changed to force reproduction."
+}

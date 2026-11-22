@@ -1,5 +1,8 @@
 # Three-Level Hierarchical Transformer with KV Caching — Report
 
+The [2026-09-29 independent audit](pr1_cache_audit.md) adds long-prefix fixes
+and qualifies the precision claims below. These are original experiment results.
+
 This report documents the toy three-level dynamic-pooling transformer built to
 develop and validate a KV-cached inference path against a naive full-recompute
 reference. It follows `docs/kv_cache_plan.md` and the `AGENTS.md` TODOs.

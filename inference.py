@@ -15,35 +15,33 @@ from tokenizer import Tokenizer
 
 
 DEPTH_FACTOR = 16
-"""Error growth across this model's seven stacked transformer blocks.
-
-Empirical: naive-vs-cached differences land within `DEPTH_FACTOR * eps * scale`
-in float64, float32 and bfloat16 alike (measured 3x-8x inside it in each).
-"""
+"""Historical empirical threshold, NOT an error bound; v2 retains violations."""
 
 
 def logit_tolerance(dtype, scale=1.0):
-    """Dtype-appropriate absolute tolerance for comparing logits.
+    """Historical dtype-scaled regression threshold, not a guaranteed bound.
 
     A hard-coded `1e-5` is a float32 yardstick and says nothing in bfloat16,
     whose epsilon is ~65000x larger. `scale` is the magnitude of the logits
     being compared (pass `logits.abs().max()`); tolerance is proportional to it
     because the comparison is really a relative one.
+    Known FP32 violations remain recorded; passing this threshold does not
+    guarantee identical greedy decisions near a tie.
     """
     eps = torch.finfo(dtype).eps
     return DEPTH_FACTOR * eps * max(float(scale), 1.0)
 
 
-def load_trained(path, map_location="cpu", dtype=None):
+def load_trained(path, map_location="cpu", dtype=None, *, device=None):
     """Reconstruct a HourglassLM and its tokenizer from a train_toy checkpoint.
 
     Returns (model, tokenizer, checkpoint). The tokenizer (including any custom
     group rule) is rebuilt from the checkpoint's metadata; older checkpoints
     without it fall back to the default tokenizer.
 
-    `dtype` casts the model on load — `torch.bfloat16` halves the weights and
-    the KV cache, at the cost of bfloat16's ~3 significant digits (see
-    `docs/report.md` §5 for what that does and does not change).
+    `map_location` controls checkpoint storage loading; `device` explicitly
+    places the reconstructed model (CPU by default). `dtype` casts its weights.
+    Bfloat16 remains experimental: cached and naive token choices can differ.
     """
     ckpt = torch.load(path, map_location=map_location)
     model = HourglassLM(n_token=ckpt["vocab_size"], **ckpt["config"])
@@ -64,8 +62,7 @@ def load_trained(path, map_location="cpu", dtype=None):
     if len(tok) != ckpt["vocab_size"]:
         raise ValueError(
             f"tokenizer/vocab size mismatch: {len(tok)} != {ckpt['vocab_size']}")
-    if dtype is not None:
-        model = model.to(dtype)
+    model = model.to(device=device or "cpu", dtype=dtype)
     return model, tok, ckpt
 
 
@@ -87,10 +84,15 @@ def eos_lengths(tokens, eos_id, sequence_dim=0):
     return first.clamp(max=T - 1) + 1
 
 
-def _check_prompt(prompt):
-    """All three decoders reject an empty prompt the same way."""
-    if prompt.numel() == 0 or prompt.size(0) == 0:
-        raise ValueError("prompt must contain at least one token")
+def _check_prompt(prompt, model, tok, max_new_tokens):
+    if prompt.ndim != 2 or 0 in prompt.shape:
+        raise ValueError("prompt must contain at least one token in time x batch shape")
+    if prompt.dtype != torch.long or not bool(((0 <= prompt) & (prompt < len(tok))).all()):
+        raise ValueError("prompt must contain int64 token IDs in the vocabulary")
+    if isinstance(model, torch.nn.Module) and prompt.device != next(model.parameters()).device:
+        raise ValueError("prompt and model must be on the same device")
+    if not isinstance(max_new_tokens, int) or max_new_tokens < 0:
+        raise ValueError("max_new_tokens must be a nonnegative integer")
 
 
 @torch.no_grad()
@@ -105,7 +107,7 @@ def greedy_decode_naive(model, tok, prompt, max_new_tokens=64, stop_on_eos=True)
     member has finished. Use ``eos_lengths`` to recover each member's true end.
     """
     model.eval()
-    _check_prompt(prompt)
+    _check_prompt(prompt, model, tok, max_new_tokens)
     tokens = prompt.clone()
     bsz = tokens.size(1)
     # A member is finished if the prompt already contains EOS.
@@ -127,7 +129,7 @@ def greedy_decode_naive(model, tok, prompt, max_new_tokens=64, stop_on_eos=True)
 
 
 @torch.no_grad()
-def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True):
+def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True, *, prefill="stream"):
     """KV-cached greedy decoding (batch size 1).
 
     prompt: 1D LongTensor (or list). Returns tokens (T,) and b1/b2/b3 (T,).
@@ -135,39 +137,19 @@ def greedy_decode_cached(model, tok, prompt, max_new_tokens=64, stop_on_eos=True
     Like the naive and batched-cached decoders, a prompt that already contains
     ``EOS`` is already finished and is returned unextended.
     """
-    model.eval()
-    output_device = prompt.device if isinstance(prompt, torch.Tensor) else None
-    prompt = prompt.tolist() if isinstance(prompt, torch.Tensor) else list(prompt)
-    if not prompt:
-        raise ValueError("prompt must contain at least one token")
-    state = model.init_state()
-    group_state = tok.init_group_state()
-
-    logit = None
-    for t in prompt:                                # consume the prompt
-        c1, c2, c3 = tok.group(t, group_state)
-        logit = model.step(state, t, c1, c2, c3)
-
-    seq = list(prompt)
-    finished = stop_on_eos and tok.eos_id in prompt
-    for _ in range(max_new_tokens):
-        if finished:
-            break
-        nxt = int(logit[-1, 0].argmax().item())
-        seq.append(nxt)
-        if stop_on_eos and nxt == tok.eos_id:
-            break
-        c1, c2, c3 = tok.group(nxt, group_state)
-        logit = model.step(state, nxt, c1, c2, c3)
-
-    tokens = torch.tensor(seq, device=output_device)
-    b1, b2, b3 = tok.group_sequence(tokens)
-    return tokens, b1, b2, b3
+    if not isinstance(prompt, torch.Tensor):
+        prompt = torch.tensor(list(prompt), dtype=torch.long,
+                              device=next(model.parameters()).device)
+    if prompt.ndim != 1:
+        raise ValueError("single-sequence prompt must be one-dimensional")
+    result = greedy_decode_cached_batched(model, tok, prompt[:, None],
+                                          max_new_tokens, stop_on_eos, prefill=prefill)
+    return tuple(x[:, 0] for x in result)
 
 
 @torch.no_grad()
 def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
-                                stop_on_eos=True):
+                                stop_on_eos=True, *, prefill="stream"):
     """Batched KV-cached greedy decoding.
 
     prompt: T0 x B (or 1D) LongTensor of equal-length prompts. Each member stops
@@ -176,15 +158,21 @@ def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
     Returns tokens (T x B) and b1/b2/b3 (T x B); use ``eos_lengths`` for the ends.
     """
     model.eval()
+    if prefill not in ("stream", "parallel"):
+        raise ValueError("prefill must be stream or parallel")
     if prompt.dim() == 1:
         prompt = prompt.view(-1, 1)
-    _check_prompt(prompt)
+    _check_prompt(prompt, model, tok, max_new_tokens)
     T0, B = prompt.size()
     dev = prompt.device
-    state = model.init_state_batched(B, max_len=T0 + max_new_tokens, device=dev)
     gstates = [tok.init_group_state() for _ in range(B)]
 
+    default_rule = tok.group_rule is None and type(tok).group is Tokenizer.group
+    table = tok._table.to(dev) if default_rule else None
+
     def closes(row, active):
+        if default_rule:
+            return tuple(table[row].unbind(-1))
         c = torch.zeros(3, B, dtype=torch.long, device=dev)
         ids = row.tolist()
         for b in range(B):
@@ -194,14 +182,23 @@ def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
 
     finished = ((prompt == tok.eos_id).any(dim=0) if stop_on_eos
                 else torch.zeros(B, dtype=torch.bool, device=dev))
-    logit = None
-    for t in range(T0):                              # consume the prompt
-        active = (~finished) if stop_on_eos else None
-        c1, c2, c3 = closes(prompt[t], active)
-        logit = model.step_batched(state, prompt[t], c1, c2, c3, active=active)
+    if max_new_tokens == 0 or (stop_on_eos and bool(finished.all())):
+        return (prompt.clone(), *tok.group_sequence(prompt, sequence_dim=0))
+    if prefill == "parallel" and not bool(finished.any()):
+        from prefill import prefill_batched
+        events = [closes(row, None) for row in prompt]
+        boundaries = [torch.stack([event[level] for event in events]) for level in range(3)]
+        logit, state = prefill_batched(model, prompt, *boundaries, max_len=T0 + max_new_tokens)
+    else:
+        state = model.init_state_batched(B, max_len=T0 + max_new_tokens, device=dev)
+        logit = None
+        for t in range(T0):                          # consume the prompt
+            active = (~finished) if stop_on_eos else None
+            c1, c2, c3 = closes(prompt[t], active)
+            logit = model.step_batched(state, prompt[t], c1, c2, c3, active=active)
 
     tokens = prompt.clone()
-    for _ in range(max_new_tokens):
+    for step in range(max_new_tokens):
         if stop_on_eos and bool(finished.all()):
             break
         nxt = logit[-1].argmax(dim=-1)               # B
@@ -209,6 +206,8 @@ def greedy_decode_cached_batched(model, tok, prompt, max_new_tokens=64,
             nxt = torch.where(finished, torch.full_like(nxt, tok.eos_id), nxt)
             finished = finished | (nxt == tok.eos_id)
         tokens = torch.cat([tokens, nxt[None, :]], dim=0)
+        if step + 1 == max_new_tokens or (stop_on_eos and bool(finished.all())):
+            break
         active = (~finished) if stop_on_eos else None
         c1, c2, c3 = closes(nxt, active)
         logit = model.step_batched(state, nxt, c1, c2, c3, active=active)

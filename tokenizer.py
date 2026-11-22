@@ -111,12 +111,11 @@ class Tokenizer:
         closes = tuple(self._table[token_id].tolist())
         if self.group_rule is not None:
             rule_state = state if state is not None else self.init_group_state()
-            closes = tuple(
-                int(v) for v in self.group_rule(token_id, closes, rule_state)
-            )
+            closes = tuple(self.group_rule(token_id, closes, rule_state))
 
         if len(closes) != 3 or any(v not in (0, 1) for v in closes):
             raise ValueError("group rule must return three binary close events")
+        closes = tuple(int(v) for v in closes)
         c1, c2, c3 = closes
         if not c3 <= c2 <= c1:
             raise ValueError("group close events must be cumulative: c3 <= c2 <= c1")

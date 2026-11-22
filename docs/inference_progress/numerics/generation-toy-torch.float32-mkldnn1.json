@@ -1,0 +1,10 @@
+{
+  "mkldnn_enabled": true,
+  "checkpoint": "toy",
+  "audit": {
+    "dtype": "torch.float32",
+    "steps": 300,
+    "max_error": 6.4373016357421875e-06,
+    "matches": true
+  }
+}

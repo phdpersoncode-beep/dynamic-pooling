@@ -1,0 +1,20 @@
+{
+  "contract": {
+    "version": 2,
+    "grammar": "nonempty-tree-v2",
+    "rule": "literal-cumulative-v1",
+    "pooling": "original-inclusive-equal-child-v1",
+    "eos": "stop-without-flush"
+  },
+  "code_hash": "cc53d25ad3271fcab3a5d986edb8651ce286739633699a7c9d0072694ae3c048",
+  "torch": "2.13.0+cpu",
+  "device": "cpu",
+  "mkldnn": true,
+  "threads": 1,
+  "seeds": [
+    111,
+    222
+  ],
+  "case_count": 8,
+  "git_commit": "4b27a648f5d93bf15b6c80a677840d1940ebd49d"
+}

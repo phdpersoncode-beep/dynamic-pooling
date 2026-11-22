@@ -53,11 +53,11 @@ def level_boundaries(c1, c2, c3, dtype=torch.float, validate=True):
     This is obtained by scattering the coarser close-event onto the slot each
     boundary token occupies in the pooled tensor (cumsum of the finer event).
     """
+    if validate:
+        check_closes(c1, c2, c3)
     c1 = c1.long()
     c2 = c2.long()
     c3 = c3.long()
-    if validate:
-        check_closes(c1, c2, c3)
     B = c1.size(0)
 
     bnd1 = c1.to(dtype)
@@ -110,7 +110,7 @@ def common(boundaries, upsample=False):
     # int(): `.item()` on float boundaries yields a Python float, which would
     # make the arange below float32 and silently upcast the whole computation
     # (breaking bfloat16/float16 hidden states).
-    n_segments = int(boundaries.sum(dim=-1).max().item())
+    n_segments = int(boundaries.long().sum(dim=-1).max().item())
 
     if upsample:
         n_segments += 1
@@ -119,7 +119,7 @@ def common(boundaries, upsample=False):
         return None
 
     tmp = torch.zeros_like(
-        boundaries
+        boundaries, dtype=torch.long
     ).unsqueeze(2) + torch.arange(
         start=0,
         end=n_segments,
@@ -135,7 +135,7 @@ def common(boundaries, upsample=False):
 
     foo = tmp - hh1.unsqueeze(-1)
 
-    return foo
+    return foo.to(accum_dtype(boundaries.dtype))
 
 
 def downsample_dense(boundaries, hidden, null_group):
@@ -226,7 +226,7 @@ def downsample(boundaries, hidden, null_group):
     check the two against each other.
     """
     B = hidden.size(1)
-    n_segments = int(boundaries.sum(dim=-1).max().item())
+    n_segments = int(boundaries.long().sum(dim=-1).max().item())
 
     if n_segments == 0:
         return null_group.repeat(1, B, 1)
