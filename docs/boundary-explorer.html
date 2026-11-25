@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reading the boundary arrays · Dynamic pooling</title>
+<style id="boundary-style">
+:root{color-scheme:light;--paper:#fbfaf6;--ink:#182c30;--muted:#506165;--line:#cbd2cb;--teal:#10635d;--a:#dcf1e9;--b:#fae6c7;--c:#e8e4f8;--mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;--sans:"DM Sans",system-ui,sans-serif;--serif:"Instrument Serif",Georgia,serif}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 var(--sans)}#boundary-lab{max-width:1110px;margin:auto;padding:0 clamp(15px,4vw,52px) 70px}a{color:var(--teal);text-underline-offset:3px}nav{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:21px 0;border-bottom:1px solid var(--line);font-size:14px}nav .brand{font-weight:680;display:flex;align-items:center;gap:10px}.mark{display:grid;gap:3px;width:24px}.mark i{display:block;height:4px;border-radius:2px;background:var(--teal)}.mark i:nth-child(2){width:72%}.mark i:nth-child(3){width:44%}nav .links{display:flex;gap:16px;flex-wrap:wrap}h1,h2,h3,p{margin:0}header{padding:clamp(24px,5vw,55px) 0 22px}h1{font:normal clamp(38px,6vw,70px)/1.04 var(--serif);letter-spacing:-.045em}header p{font-size:clamp(16px,1.8vw,19px);color:var(--muted);max-width:73ch;margin:13px 0 0}h2{font:normal clamp(29px,4vw,42px)/1.12 var(--serif);letter-spacing:-.025em}h3{font-size:16px}button{font:inherit;cursor:pointer;color:inherit}button:focus-visible,a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #9d4f10;outline-offset:2px}button:disabled{opacity:.4;cursor:default}.board{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 4px 20px #1533330a}.strip,.controls,.readout,.edit{padding:16px clamp(12px,2.5vw,27px)}.strip{background:#f3f4ec;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.striptxt,.label{font:600 12px/1.4 var(--mono);letter-spacing:.065em;text-transform:uppercase;color:var(--muted)}.switches{display:flex;gap:6px;flex-wrap:wrap}.btn,.phrase{border:1px solid var(--line);border-radius:7px;background:#fff;padding:7px 12px;font-size:14px}.phrase[aria-pressed=true],.primary{color:#fff;background:var(--ink);border-color:var(--ink)}.matrixbox{overflow-x:auto;padding:16px clamp(10px,2vw,24px) 10px}.matrix{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:3px;font:14px var(--mono);min-width:650px}.matrix th,.matrix td{text-align:center;padding:0;height:32px}.matrix th:first-child{text-align:left;width:68px;font:600 13px var(--sans)}.matrix .pos{font-size:11px;color:var(--muted);height:20px}.char{font:600 16px var(--mono);height:38px;width:100%;border:1px solid transparent;border-radius:5px;background:#f1f3f0}.char.special{font-size:11px}.char[aria-pressed=true]{background:var(--ink);color:white}.matrix .bit{border-radius:3px;color:#697577;background:#f6f7f5}.matrix .yes{color:var(--ink);font-weight:700}.matrix tr[data-level="1"] .yes,.l1{background:var(--a)}.matrix tr[data-level="2"] .yes,.l2{background:var(--b)}.matrix tr[data-level="3"] .yes,.l3{background:var(--c)}.matrix .selectedcol{box-shadow:inset 0 -2px var(--ink)}.matrix .bad{color:#9a2033;box-shadow:inset 0 0 0 2px #9a2033}.matrix .groupbar{font:600 12px var(--sans);height:25px;border-radius:4px;overflow-wrap:anywhere}.matrix .pending{background:#f3f3ef;color:var(--muted);font-weight:400}.note{font-size:13px;color:var(--muted);padding:0 clamp(12px,2.5vw,27px) 13px}.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-block:1px solid var(--line)}.controls label{margin-left:auto;font:13px var(--mono)}.controls input{max-width:210px;min-width:100px;flex:1;accent-color:var(--teal)}.readout{background:#f6faf7}.readout h3{font:normal clamp(23px,3vw,31px)/1.2 var(--serif);margin:5px 0}.readout p{max-width:85ch}.count{margin-top:9px;font:13px var(--mono);color:#33504c}.edit{border-top:1px solid var(--line)}summary{cursor:pointer;font-weight:600}.edit p{margin:9px 0;color:var(--muted);font-size:14px}.edits{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.edits label{padding:5px 8px;border-radius:4px;font:14px var(--mono)}input[type=checkbox]{accent-color:var(--teal);width:16px;height:16px;vertical-align:middle}.error{color:#9a2033;font-weight:600}.explain{margin-top:38px;display:grid;grid-template-columns: minmax(160px,1fr) minmax(0,2.25fr);gap:clamp(16px,4vw,48px);border-top:1px solid var(--line);padding-top:24px}.bodycopy>*+*{margin-top:13px}.bodycopy p{max-width:78ch}code,pre{font-family:var(--mono);font-size:.91em}pre{background:#edf2ed;border-radius:7px;padding:13px 16px;line-height:1.65;overflow:auto;margin:0}ul,ol{margin:0;padding-left:1.35em}li+li{margin-top:8px}.src{font-size:13px;color:var(--muted)}.src a{white-space:nowrap}.fine{color:var(--muted);font-size:14px}.key{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}.key.l1{background:#499c83}.key.l2{background:#bc832e}.key.l3{background:#9584bd}#file{background:none;border:0;text-decoration:underline;color:var(--teal);font:inherit;padding:0;text-underline-offset:3px}@media(max-width:720px){.explain{grid-template-columns:1fr}.matrix{min-width:620px}.controls label{margin-left:0}.controls input{max-width:none}.strip{align-items:flex-start}.links{justify-content:flex-end}}@media(max-width:450px){nav{align-items:flex-start}.links{max-width:160px}.controls label{width:88px}.controls .btn{padding:8px}.matrixbox{padding-left:6px}.matrix th:first-child{width:54px}.switches{gap:4px}.phrase{padding:6px}.board{border-radius:10px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style></head><body>
+<main id="boundary-lab">
+<nav aria-label="Page"><span class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Dynamic pooling</span><div class="links"><a href="#interface">Interface</a><a href="#next">Next steps</a><button type="button" id="file">Save HTML</button></div></nav>
+<header><h1>Reading the boundary arrays</h1><p>Read “Red foxes run. Gray owls hunt.” one character at a time. The author supplies three marks for every character. A 1 finishes a group at that level, including the character under the mark.</p></header>
+<section class="board" aria-label="Interactive character and boundary explorer">
+<div class="strip"><span class="striptxt">Character stream</span><div class="switches"><button class="phrase" data-jump="10">Red foxes run.</button><button class="phrase" data-jump="25">Gray owls hunt.</button></div></div>
+<div class="matrixbox" id="matrixbox" role="region" aria-label="Character positions, supplied masks and their group spans" tabindex="0"><table class="matrix" id="matrix"></table></div>
+<p class="note">Select a character to inspect its column. ␠ is one real space. The bands show the groups in the supplied annotation, including groups that finish later.</p>
+<div class="controls"><button class="btn" id="prev">← Back</button><button class="btn primary" id="step">Step →</button><button class="btn" id="boundary">Next close</button><label for="cursor" id="position">Position 10</label><input type="range" id="cursor" min="0" max="32" value="10" aria-label="Consumed token position"></div>
+<div class="readout" aria-live="polite" aria-atomic="true"><div class="label" id="tuple"></div><h3 id="headline"></h3><p id="effect"></p><p id="counts" class="count"></p><p id="writes" class="count"></p></div>
+<details class="edit" id="editor"><summary>Edit the three marks at this position</summary><p>Each checkbox sets one supplied value. Try clearing L1 while L2 is checked to see how the nesting check works.</p><div class="edits"><label class="l1"><input type="checkbox" id="c1"> L1</label><label class="l2"><input type="checkbox" id="c2"> L2</label><label class="l3"><input type="checkbox" id="c3"> L3</label><button class="btn" id="reset">Restore example</button></div></details>
+</section>
+<section class="explain"><h2>Where the verb goes</h2><div class="bodycopy"><p>At the space after <b>Red</b>, only L1 closes. After <b>foxes</b>, L1 closes the word and L2 closes the adjective–noun phrase. After <b>run.</b>, all three close. The second clause repeats the pattern with <b>Gray owls</b> and <b>hunt.</b></p><p>There is a subtle choice here. In this model every completed L3 group is made of completed L2 children. “Red foxes run.” therefore has two L2 children, <b>Red foxes</b> and a one-word verb group, <b>run.</b> If a separate linguistic annotation should flag only adjective–noun phrases, keep that phrase label alongside the structural masks. Supplying <code>(1,0,1)</code> at the verb would leave its L2 group unfinished when L3 tries to close.</p><p class="fine">For this fixture, punctuation stays with the verb and the author includes a space after each period, including the final one. SOS and EOS each occupy one special-token position with three zero marks. SOS participates in the first word mean. Each processed lower-level null contributes to the first parent mean at the next level. EOS leaves open groups open.</p></div></section>
+<section class="explain" id="interface"><h2>What we hand the model</h2><div class="bodycopy"><p>Imagine four strips of equal length laid on top of each other. The first holds character IDs. The others hold the author’s L1, L2 and L3 marks. A single step reads <b>one column</b>. Training and prompt prefill read a block of columns. A resumed session starts at the next column.</p>
+<pre><code>position 10   token ID for ␠    1  1  0
+position 11   token ID for r    0  0  0</code></pre>
+<p class="fine">These two rows show the original fixture. Each occurrence of ␠ uses the same vocabulary ID. Its three supplied values can differ. For a batch, each strip has shape [time, batch]. A cached step takes one [batch] row from each strip. The display counts completed groups and illustrates the seven-stack schedule for consumed inputs. The model also keeps a separate initial null slot at each pooled stack.</p>
+<p><b>Already implemented.</b> <code>HourglassLM.forward(data, c1, c2, c3)</code>, <code>step_batched(state, tokens, c1, c2, c3)</code> and <code>prefill_batched(model, data, c1, c2, c3)</code> already take these values. The toy training loader also reads three saved arrays. A new character vocabulary needs a matching ID map and model vocabulary size.</p>
+<p><b>What needs to change.</b> The greedy decoders accept a prompt and tokenizer and calculate the marks. <code>CacheSession.consume(data)</code> also computes them internally. Give these entry points an explicit-array option, including one supplied triple per newly consumed character during continuation. Bind the user’s character map and mask convention to the dataset and checkpoint so saved examples mean the same thing after reload.</p>
+<p class="src">Reviewed implementation · <a href="https://github.com/phdpersoncode-beep/dynamic-pooling/blob/29bc361/hourglass.py#L515">Model</a> · <a href="https://github.com/phdpersoncode-beep/dynamic-pooling/blob/29bc361/prefill.py#L7">Prefill</a> · <a href="https://github.com/phdpersoncode-beep/dynamic-pooling/blob/29bc361/inference.py#L99">Decoders</a> · <a href="https://github.com/phdpersoncode-beep/dynamic-pooling/blob/29bc361/cache_session.py#L47">Session</a></p>
+</div></section>
+<section class="explain" id="next"><h2>What to test next</h2><div class="bodycopy"><ol><li><b>Commit the four strips as a fixture.</b> Supply the three literal Boolean arrays. Assert their shape, binary values, and L3 ≤ L2 ≤ L1 at every position. Check both clause trees against hand-written memberships. A grammar parser or boundary predictor is unnecessary for this test.</li><li><b>Carry exactly those marks through every entry point.</b> Test the same character IDs with two different valid annotations in one batch. At each prefix compare the cached member to its own full-prefix result. Split just before and after a word, noun phrase, and clause closes. Save, restore, and consume the next annotated column.</li><li><b>Check what the cache remembers.</b> Compare real per-layer keys and values, open sums and counts, latest completed groups, finite next-token logits, and greedy choices. The CLI currently compares generated token IDs only. Keep FP32 and BF16 counterexamples visible.</li><li><b>Test recall after the source clause closes.</b> Put a source in the first clause, add a distractor, then score recall in a later group. Assert the source L3 slot is available before the first scored prediction. Give the flat control access to the same boundary annotations.</li></ol>
+<p class="src"><a href="https://github.com/phdpersoncode-beep/dynamic-pooling/blob/29bc361/docs/v2_trees_and_cache.md">Pooling semantics</a> · <a href="https://github.com/phdpersoncode-beep/dynamic-pooling/blob/29bc361/docs/inference_precision.md">Numerical checks</a> · <a href="https://github.com/phdpersoncode-beep/dynamic-pooling/blob/29bc361/docs/v2_results.md">Prior learning results</a></p></div></section>
+</main>
+<script id="boundary-script">
+(() => {
+'use strict';
+const root = document.getElementById('boundary-lab');
+const $ = id => root.querySelector('#'+id);
+const tokens = ['SOS', ...'Red foxes run. Gray owls hunt. ', 'EOS'];
+// The author supplies each level independently. No word or phrase detector.
+const supplied = [
+ [0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,1,0],
+ [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0],
+ [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0]
+];
+const levels=['L1','L2','L3'];
+const copyMasks=()=>supplied.map(row=>row.slice());
+let masks=copyMasks(), cursor=10;
+const display=t=>t===' '?'␠':t;
+const rangeText=(a,b)=>tokens.slice(a,b+1).filter(t=>t!=='SOS'&&t!=='EOS').join('').trim() || (a===0?'SOS':'␠');
+function intervals(row) {
+  const spans=[]; let start=0;
+  row.forEach((bit,i)=>{if(bit){spans.push({start,end:i});start=i+1;}});
+  return spans;
+}
+function render(scroll=false) {
+  const second=cursor>=16, lo=second?16:0, hi=second?32:15;
+  const cols=Array.from({length:hi-lo+1},(_,i)=>lo+i);
+  const firstBad=tokens.findIndex((_,i)=>masks[2][i]>masks[1][i]||masks[1][i]>masks[0][i]);
+  const spans=masks.map(intervals);
+  const table=$('matrix');
+  const row=(label,body,props='')=>'<tr '+props+'><th scope="row">'+label+'</th>'+body+'</tr>';
+  const cell=(v,cls='')=>'<td class="'+cls+'">'+v+'</td>';
+  let html=row('Position',cols.map(i=>cell(i,'pos')).join(''));
+  html+=row('Token',cols.map(i=>cell('<button type="button" class="char '+(tokens[i].length>1?'special':'')+'" data-i="'+i+'" aria-label="Position '+i+', '+(tokens[i]===' '?'space':tokens[i])+'" aria-pressed="'+(i===cursor)+'">'+display(tokens[i])+'</button>')).join(''));
+  masks.forEach((r,l)=>{html+=row('<i class="key l'+(l+1)+'"></i>'+levels[l],cols.map(i=>cell(r[i],'bit '+(r[i]?'yes ':'')+(cursor===i?'selectedcol ':'')+(i===firstBad?'bad':''))).join(''),'data-level="'+(l+1)+'"');});
+  if(firstBad<0)spans.forEach((items,l)=>{
+    let body='';
+    const start=items.length?items[items.length-1].end+1:0;
+    const all=start<tokens.length?[...items,{start,end:tokens.length-1,open:true}]:items;
+    for(const x of all){
+      const a=Math.max(x.start,lo),b=Math.min(x.end,hi);
+      if(a>b)continue;
+      const full=rangeText(x.start,x.end), text=(b-a<2&&full.length>2?'…':full);
+      const label=x.open?'Open':(x.start<lo?'… ':'')+text+(x.end>hi?' …':'');
+      body+='<td colspan="'+(b-a+1)+'" class="groupbar '+(x.open?'pending':'l'+(l+1))+'" aria-label="'+levels[l]+' '+(x.open?'open tail':'group '+full)+'">'+label+'</td>';
+    }
+    html+=row(levels[l]+' span',body);
+  });
+  table.innerHTML='<caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Supplied masks and structural groups for clause '+(second?'two':'one')+'</caption><tbody>'+html+'</tbody>';
+  const bits=masks.map(r=>r[cursor]), closes=levels.filter((_,l)=>bits[l]);
+  const completed=spans.map(ss=>ss.filter(s=>s.end<=cursor));
+  $('tuple').textContent='Position '+cursor+' · '+display(tokens[cursor])+' · ('+bits.join(', ')+')';
+  $('headline').textContent=closes.length?closes.join(' + ')+' close':'Token stacks advance';
+  $('effect').classList.remove('error');
+  if(firstBad>=0 && firstBad<=cursor){
+    $('headline').textContent='Invalid hierarchy at position '+firstBad;
+    $('effect').classList.add('error');
+    $('effect').textContent='A parent closes while its child stays open. Select that column and supply nested marks, or restore the example.';
+    $('counts').textContent='Cache state after this invalid event is undefined.';
+  }else{
+    const names=completed.map(ss=>ss.length?'“'+rangeText(ss[ss.length-1].start,ss[ss.length-1].end)+'”':'the learned null');
+    const closedGroups=bits.map((b,l)=>b?levels[l]+' completes '+names[l]:null).filter(Boolean);
+    $('effect').textContent=closedGroups.length?closedGroups.join('. ')+'. The token at this position can use each newly completed group to predict the next token.':tokens[cursor]==='EOS'?'EOS ends this teacher-forced input. Its zero marks leave the trailing token group open.':tokens[cursor]==='SOS'?'SOS enters the first L1 mean. Each coarser level starts from its processed null.':'The character joins the open L1 sum. The latest visible L3 representation is '+names[2]+'.';
+    $('counts').textContent='Completed groups through this position  ·  '+completed.map((ss,i)=>levels[i]+' '+ss.length).join('   /   ');
+  }
+  const stacks=['token pre',...(bits[0]?['L1 down']:[]),...(bits[1]?['L2 down']:[]),...(bits[2]?['L3']:[]),...(bits[1]?['L2 up']:[]),...(bits[0]?['L1 up']:[]),'token post'];
+  $('writes').textContent=firstBad>=0&&firstBad<=cursor?'':'Stacks appending one real K/V slot  ·  '+stacks.join(' → ');
+  $('position').textContent='Position '+cursor; $('cursor').value=cursor;
+  $('prev').disabled=cursor===0; $('step').disabled=cursor===tokens.length-1;
+  $('boundary').disabled=!masks.some(r=>r.slice(cursor+1).includes(1));
+  root.querySelectorAll('[data-jump]').forEach(b=>b.setAttribute('aria-pressed',String((Number(b.dataset.jump)>15)===second)));
+  bits.forEach((b,l)=>{$('c'+(l+1)).checked=Boolean(b);$('c'+(l+1)).disabled=cursor===0||cursor===tokens.length-1;});
+  if(scroll){
+    const box=$('matrixbox'),chosen=table.querySelector('[aria-pressed="true"]');
+    const dx=chosen.getBoundingClientRect().left-box.getBoundingClientRect().left;
+    if(dx<65||dx>box.clientWidth-48)box.scrollLeft+=dx-box.clientWidth/2;
+  }
+}
+function go(n){cursor=Math.max(0,Math.min(tokens.length-1,n));render(true);}
+$('matrix').addEventListener('click',e=>{const b=e.target.closest('[data-i]');if(b){go(Number(b.dataset.i));$('matrix').querySelector('[data-i="'+cursor+'"]').focus({preventScroll:true});}});
+$('prev').onclick=()=>go(cursor-1); $('step').onclick=()=>go(cursor+1);
+$('cursor').oninput=e=>go(Number(e.target.value));
+$('boundary').onclick=()=>{const next=tokens.findIndex((_,i)=>i>cursor&&masks.some(r=>r[i]));if(next>=0)go(next);};
+root.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>go(Number(b.dataset.jump)));
+levels.forEach((_,l)=>$('c'+(l+1)).onchange=e=>{masks[l][cursor]=Number(e.target.checked);render();});
+$('reset').onclick=()=>{masks=copyMasks();render();};
+$('file').onclick=()=>{
+  const doc='<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reading the boundary arrays</title>'+document.getElementById('boundary-style').outerHTML+'</head><body>'+root.outerHTML+document.getElementById('boundary-script').outerHTML+'</body></html>';
+  const url=URL.createObjectURL(new Blob([doc],{type:'text/html'}));const link=document.createElement('a');link.href=url;link.download='boundary-explorer.html';link.click();setTimeout(()=>URL.revokeObjectURL(url),2000);
+};
+render();
+})();
+</script></body></html>
